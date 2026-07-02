@@ -39,7 +39,6 @@ const Canvas: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 // --- 画布上的可拖拽图表 ---
 const DraggableChart: React.FC<{ chart: ChartItem; dataSourceData: any; onClick: () => void; onResize: (id: number, w: number, h: number) => void }> = ({ chart, dataSourceData, onClick, onResize }) => {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: `chart-${chart.id}` });
-  const { attributes: resizeAttrs, listeners: resizeListeners, setNodeRef: setResizeRef, transform: resizeTransform } = useDraggable({ id: `resize-${chart.id}` });
 
   const style: React.CSSProperties = {
     position: 'absolute', left: chart.position_x, top: chart.position_y, width: chart.width, height: chart.height,
@@ -47,21 +46,35 @@ const DraggableChart: React.FC<{ chart: ChartItem; dataSourceData: any; onClick:
     background: '#fff', borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', overflow: 'hidden', cursor: 'move',
   };
 
-  // 缩放逻辑：在 useEffect 中检测 resize transform 并回调
-  React.useEffect(() => {
-    if (resizeTransform) {
-      const newW = Math.max(200, chart.width + resizeTransform.x);
-      const newH = Math.max(150, chart.height + resizeTransform.y);
+  const handleResizeMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startW = chart.width;
+    const startH = chart.height;
+
+    const onMouseMove = (moveEvt: MouseEvent) => {
+      const newW = Math.max(200, startW + (moveEvt.clientX - startX));
+      const newH = Math.max(150, startH + (moveEvt.clientY - startY));
       onResize(chart.id, newW, newH);
-    }
-  }, [resizeTransform]);
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
 
   return (
     <div ref={setNodeRef} style={style} {...listeners} {...attributes} onClick={onClick}>
       <ChartRenderer chartType={chart.chart_type as any} title={chart.title} data={dataSourceData}
         queryConfig={JSON.parse(chart.query_config || '{}')} configJson={chart.config_json} />
       {/* 缩放把手 */}
-      <div ref={setResizeRef} {...resizeAttrs} {...resizeListeners}
+      <div
         style={{
           position: 'absolute', right: 0, bottom: 0, width: 20, height: 20,
           cursor: 'nwse-resize',
@@ -69,7 +82,7 @@ const DraggableChart: React.FC<{ chart: ChartItem; dataSourceData: any; onClick:
           borderRadius: '0 0 8px 0',
           zIndex: 10,
         }}
-        onMouseDown={(e) => e.stopPropagation()}
+        onMouseDown={handleResizeMouseDown}
       />
     </div>
   );
