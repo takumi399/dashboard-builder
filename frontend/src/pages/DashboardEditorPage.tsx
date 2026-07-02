@@ -4,6 +4,7 @@ import { Button, Space, Typography, Spin, Select, Input, InputNumber, Empty, App
 import { SaveOutlined, EyeOutlined, ArrowLeftOutlined, BarChartOutlined, LineChartOutlined, PieChartOutlined, NumberOutlined, TableOutlined } from '@ant-design/icons';
 import { DndContext, useDraggable, useDroppable, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
+import { Rnd } from 'react-rnd';
 import ChartRenderer from '../components/charts/ChartRenderer';
 import { dashboardService, chartService, dataSourceService } from '../services/dashboard';
 
@@ -36,56 +37,55 @@ const Canvas: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   );
 };
 
-// --- 画布上的可拖拽图表 ---
-const DraggableChart: React.FC<{ chart: ChartItem; dataSourceData: any; onClick: () => void; onResize: (id: number, w: number, h: number) => void }> = ({ chart, dataSourceData, onClick, onResize }) => {
-  const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: `chart-${chart.id}` });
-
-  const style: React.CSSProperties = {
-    position: 'absolute', left: chart.position_x, top: chart.position_y, width: chart.width, height: chart.height,
-    transform: transform ? `translate(${transform.x}px, ${transform.y}px)` : undefined,
-    background: '#fff', borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', overflow: 'hidden', cursor: 'move',
-  };
-
-  const handleResizeMouseDown = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.nativeEvent.stopImmediatePropagation();
-    e.preventDefault();
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const startW = chart.width;
-    const startH = chart.height;
-
-    const onMouseMove = (moveEvt: MouseEvent) => {
-      const newW = Math.max(200, startW + (moveEvt.clientX - startX));
-      const newH = Math.max(150, startH + (moveEvt.clientY - startY));
-      onResize(chart.id, newW, newH);
-    };
-
-    const onMouseUp = () => {
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
-    };
-
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-  };
-
+// --- 画布上的图表 (使用 react-rnd 支持拖拽+缩放) ---
+const DraggableChart: React.FC<{
+  chart: ChartItem;
+  dataSourceData: any;
+  onClick: () => void;
+  onResize: (id: number, width: number, height: number, x?: number, y?: number) => void;
+  onMove: (id: number, x: number, y: number) => void;
+}> = ({ chart, dataSourceData, onClick, onResize, onMove }) => {
   return (
-    <div ref={setNodeRef} style={style} {...listeners} {...attributes} onClick={onClick}>
-      <ChartRenderer chartType={chart.chart_type as any} title={chart.title} data={dataSourceData}
-        queryConfig={JSON.parse(chart.query_config || '{}')} configJson={chart.config_json} />
-      {/* 缩放把手 */}
-      <div
-        style={{
-          position: 'absolute', right: 0, bottom: 0, width: 20, height: 20,
-          cursor: 'nwse-resize',
-          background: 'linear-gradient(135deg, transparent 50%, #d9d9d9 50%)',
-          borderRadius: '0 0 8px 0',
-          zIndex: 10,
-        }}
-        onMouseDown={handleResizeMouseDown}
-      />
-    </div>
+    <Rnd
+      position={{ x: chart.position_x, y: chart.position_y }}
+      size={{ width: chart.width, height: chart.height }}
+      minWidth={200}
+      minHeight={150}
+      bounds="parent"
+      enableResizing={{
+        top: false, right: false, bottom: false, left: false,
+        topRight: false, bottomRight: true, bottomLeft: false, topLeft: false,
+      }}
+      onDragStop={(_e, d) => {
+        onMove(chart.id, d.x, d.y);
+      }}
+      onResizeStop={(_e, _direction, ref, _delta, position) => {
+        onResize(
+          chart.id,
+          parseInt(ref.style.width, 10),
+          parseInt(ref.style.height, 10),
+          position.x,
+          position.y,
+        );
+      }}
+      onClick={onClick}
+      style={{
+        background: '#fff',
+        borderRadius: 8,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+        overflow: 'hidden',
+      }}
+    >
+      <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+        <ChartRenderer
+          chartType={chart.chart_type as any}
+          title={chart.title}
+          data={dataSourceData}
+          queryConfig={JSON.parse(chart.query_config || '{}')}
+          configJson={chart.config_json}
+        />
+      </div>
+    </Rnd>
   );
 };
 
@@ -127,7 +127,7 @@ const DashboardEditorPage: React.FC = () => {
   }, [id]);
 
   const handleDragEnd = useCallback(async (event: DragEndEvent) => {
-    const { active, over, delta } = event;
+    const { active, over } = event;
     if (!over) return;
 
     // 从面板拖到画布
@@ -146,21 +146,26 @@ const DashboardEditorPage: React.FC = () => {
       return;
     }
 
-    // 移动已有图表
-    if (String(active.id).startsWith('chart-')) {
-      const chartId = Number(String(active.id).replace('chart-', ''));
-      const chart = charts.find(c => c.id === chartId);
-      if (!chart) return;
-      const newX = Math.max(0, chart.position_x + delta.x);
-      const newY = Math.max(0, chart.position_y + delta.y);
-      setCharts(prev => prev.map(c => c.id === chartId ? { ...c, position_x: newX, position_y: newY } : c));
-      try { await chartService.update(chartId, { position_x: newX, position_y: newY }); } catch {}
-    }
+    // 注意: 图表拖拽/缩放现由 react-rnd 的 Rnd 组件处理, 不再走 @dnd-kit
   }, [charts, id]);
 
-  const handleResize = useCallback((chartId: number, newW: number, newH: number) => {
-    setCharts(prev => prev.map(c => c.id === chartId ? { ...c, width: newW, height: newH } : c));
-    chartService.update(chartId, { width: newW, height: newH }).catch(() => {});
+  const handleMove = useCallback((chartId: number, x: number, y: number) => {
+    setCharts(prev => prev.map(c => c.id === chartId ? { ...c, position_x: x, position_y: y } : c));
+    chartService.update(chartId, { position_x: x, position_y: y }).catch(() => {});
+  }, []);
+
+  const handleResize = useCallback((chartId: number, newW: number, newH: number, x?: number, y?: number) => {
+    setCharts(prev => prev.map(c => {
+      if (c.id !== chartId) return c;
+      const updated = { ...c, width: newW, height: newH };
+      if (x !== undefined) updated.position_x = x;
+      if (y !== undefined) updated.position_y = y;
+      return updated;
+    }));
+    const payload: any = { width: newW, height: newH };
+    if (x !== undefined) payload.position_x = x;
+    if (y !== undefined) payload.position_y = y;
+    chartService.update(chartId, payload).catch(() => {});
   }, []);
 
   const handleSave = async () => {
@@ -231,7 +236,7 @@ const DashboardEditorPage: React.FC = () => {
           <Canvas>
             {charts.map(chart => (
               <DraggableChart key={chart.id} chart={chart} dataSourceData={dataSourceData[chart.data_source_id || 0]}
-                onClick={() => setSelectedChart(chart)} onResize={handleResize} />
+                onClick={() => setSelectedChart(chart)} onResize={handleResize} onMove={handleMove} />
             ))}
             {charts.length === 0 && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>
