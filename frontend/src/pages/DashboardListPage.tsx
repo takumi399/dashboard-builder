@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Card, Row, Col, Modal, Input, Typography, message, Empty, Space, Tag, Popconfirm, Spin } from 'antd';
+import { Button, Card, Row, Col, Modal, Input, Typography, Empty, Space, Tag, Popconfirm, Spin, App } from 'antd';
 import { PlusOutlined, DeleteOutlined, EyeOutlined, LogoutOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
@@ -13,6 +13,7 @@ interface Dashboard {
 }
 
 const DashboardListPage: React.FC = () => {
+  const { message } = App.useApp();
   const [dashboards, setDashboards] = useState<Dashboard[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);

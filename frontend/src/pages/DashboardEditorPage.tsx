@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Button, Space, Typography, message, Spin, Select, Input, InputNumber, Empty } from 'antd';
+import { Button, Space, Typography, Spin, Select, Input, InputNumber, Empty, App } from 'antd';
 import { SaveOutlined, EyeOutlined, ArrowLeftOutlined, BarChartOutlined, LineChartOutlined, PieChartOutlined } from '@ant-design/icons';
 import { DndContext, useDraggable, useDroppable } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
@@ -54,6 +54,7 @@ const DraggableChart: React.FC<{ chart: ChartItem; dataSourceData: any; onClick:
 
 // --- 编辑器主页面 ---
 const DashboardEditorPage: React.FC = () => {
+  const { message } = App.useApp();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [dashboard, setDashboard] = useState<any>(null);

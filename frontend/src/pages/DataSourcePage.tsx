@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Button, Table, Upload, Modal, Input, Typography, message, Space, Popconfirm, Tag } from 'antd';
+import { Button, Table, Upload, Modal, Input, Typography, Space, Popconfirm, Tag, App } from 'antd';
 import { UploadOutlined, DeleteOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
@@ -8,6 +8,7 @@ import { dataSourceService } from '../services/dashboard';
 const { Title } = Typography;
 
 const DataSourcePage: React.FC = () => {
+  const { message } = App.useApp();
   const [sources, setSources] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
