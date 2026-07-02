@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Space, Typography, Spin, Select, Input, InputNumber, Empty, App } from 'antd';
 import { SaveOutlined, EyeOutlined, ArrowLeftOutlined, BarChartOutlined, LineChartOutlined, PieChartOutlined } from '@ant-design/icons';
-import { DndContext, useDraggable, useDroppable } from '@dnd-kit/core';
+import { DndContext, useDraggable, useDroppable, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
 import ChartRenderer from '../components/charts/ChartRenderer';
 import { dashboardService, chartService, dataSourceService } from '../services/dashboard';
@@ -64,6 +64,8 @@ const DashboardEditorPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [selectedChart, setSelectedChart] = useState<ChartItem | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   useEffect(() => {
     const load = async () => {
@@ -163,17 +165,17 @@ const DashboardEditorPage: React.FC = () => {
       </div>
 
       {/* 编辑器主体 */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* 左侧图表面板 */}
-        <div style={{ width: 160, padding: 12, borderRight: '1px solid #f0f0f0', background: '#fafafa' }}>
-          <Text strong style={{ display: 'block', marginBottom: 8 }}>图表类型</Text>
-          <PaletteItem type="bar" icon={<BarChartOutlined />} label="柱状图" />
-          <PaletteItem type="line" icon={<LineChartOutlined />} label="折线图" />
-          <PaletteItem type="pie" icon={<PieChartOutlined />} label="饼图" />
-        </div>
+      <DndContext onDragEnd={handleDragEnd} sensors={sensors}>
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+          {/* 左侧图表面板 */}
+          <div style={{ width: 160, padding: 12, borderRight: '1px solid #f0f0f0', background: '#fafafa' }}>
+            <Text strong style={{ display: 'block', marginBottom: 8 }}>图表类型</Text>
+            <PaletteItem type="bar" icon={<BarChartOutlined />} label="柱状图" />
+            <PaletteItem type="line" icon={<LineChartOutlined />} label="折线图" />
+            <PaletteItem type="pie" icon={<PieChartOutlined />} label="饼图" />
+          </div>
 
-        {/* 中间画布 */}
-        <DndContext onDragEnd={handleDragEnd}>
+          {/* 中间画布 */}
           <Canvas>
             {charts.map(chart => (
               <DraggableChart key={chart.id} chart={chart} dataSourceData={dataSourceData[chart.data_source_id || 0]}
@@ -185,10 +187,9 @@ const DashboardEditorPage: React.FC = () => {
               </div>
             )}
           </Canvas>
-        </DndContext>
 
-        {/* 右侧属性面板 */}
-        <div style={{ width: 280, padding: 12, borderLeft: '1px solid #f0f0f0', background: '#fafafa', overflowY: 'auto' }}>
+          {/* 右侧属性面板 */}
+          <div style={{ width: 280, padding: 12, borderLeft: '1px solid #f0f0f0', background: '#fafafa', overflowY: 'auto' }}>
           {selectedChart ? (
             <>
               <Title level={5}>图表属性</Title>
@@ -242,7 +243,7 @@ const DashboardEditorPage: React.FC = () => {
             </div>
           )}
         </div>
-      </div>
+      </DndContext>
     </div>
   );
 };
