@@ -143,6 +143,14 @@ const DashboardEditorPage: React.FC = () => {
     setSelectedChart(updated);
     setCharts(prev => prev.map(c => c.id === updated.id ? updated : c));
     try { await chartService.update(updated.id, { [field]: value }); } catch {}
+
+    // 切换数据源时立即加载数据
+    if (field === 'data_source_id' && value) {
+      try {
+        const data = await dataSourceService.getData(value);
+        setDataSourceData(prev => ({ ...prev, [value]: data }));
+      } catch {}
+    }
   };
 
   if (loading) return <div style={{ display: 'flex', justifyContent: 'center', padding: 100 }}><Spin size="large" /></div>;
