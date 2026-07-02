@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Card, List, Modal, Input, Typography, message, Empty, Space, Tag, Popconfirm } from 'antd';
+import { Button, Card, Row, Col, Modal, Input, Typography, message, Empty, Space, Tag, Popconfirm, Spin } from 'antd';
 import { PlusOutlined, DeleteOutlined, EyeOutlined, LogoutOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
@@ -67,31 +67,35 @@ const DashboardListPage: React.FC = () => {
         </Space>
       </div>
 
-      <List grid={{ gutter: 16, xs: 1, sm: 2, md: 3 }} loading={loading}
-        dataSource={dashboards}
-        locale={{ emptyText: <Empty description="还没有看板，创建第一个吧！" /> }}
-        renderItem={d => (
-          <List.Item>
-            <Card
-              hoverable
-              actions={[
-                <EyeOutlined key="view" onClick={() => navigate(`/editor/${d.id}`)} />,
-                <Popconfirm key="del" title="确定删除此看板？" onConfirm={() => handleDelete(d.id)}><DeleteOutlined /></Popconfirm>,
-              ]}
-            >
-              <Card.Meta
-                title={<Space>{d.name}{d.is_published && <Tag color="green">已发布</Tag>}</Space>}
-                description={
-                  <div>
-                    <Text type="secondary">{d.description || '暂无描述'}</Text>
-                    <br /><Text type="secondary">{d.chart_count} 个图表</Text>
-                  </div>
-                }
-              />
-            </Card>
-          </List.Item>
-        )}
-      />
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: 60 }}><Spin size="large" /></div>
+      ) : dashboards.length === 0 ? (
+        <Empty description="还没有看板，创建第一个吧！" />
+      ) : (
+        <Row gutter={[16, 16]}>
+          {dashboards.map(d => (
+            <Col xs={24} sm={12} md={8} key={d.id}>
+              <Card
+                hoverable
+                actions={[
+                  <EyeOutlined key="view" onClick={() => navigate(`/editor/${d.id}`)} />,
+                  <Popconfirm key="del" title="确定删除此看板？" onConfirm={() => handleDelete(d.id)}><DeleteOutlined /></Popconfirm>,
+                ]}
+              >
+                <Card.Meta
+                  title={<Space>{d.name}{d.is_published && <Tag color="green">已发布</Tag>}</Space>}
+                  description={
+                    <div>
+                      <Text type="secondary">{d.description || '暂无描述'}</Text>
+                      <br /><Text type="secondary">{d.chart_count} 个图表</Text>
+                    </div>
+                  }
+                />
+              </Card>
+            </Col>
+          ))}
+        </Row>
+      )}
 
       <Modal title="新建看板" open={modalOpen} onOk={handleCreate} onCancel={() => setModalOpen(false)} confirmLoading={creating}>
         <Input placeholder="看板名称" value={newName} onChange={e => setNewName(e.target.value)} style={{ marginBottom: 12 }} />
