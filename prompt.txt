@@ -1,14 +1,20 @@
 Fix the resize handle in C:\Users\Administrator\Desktop\claude\task\frontend\src\pages\DashboardEditorPage.tsx.
 
-Problem: @dnd-kit's PointerSensor listens for pointer events, but the resize handle uses onMouseDown with stopPropagation. This doesn't stop pointer events from bubbling up to the parent div that has dnd-kit's drag listeners. So dragging the resize handle also moves the chart.
+Current problem: The resize handle immediately starts following the mouse on click, and releasing doesn't reliably stop it. It should behave like a standard resize grip: mousedown to start, drag to resize, mouseup to stop.
 
-Fix: Change the resize handle's event from onMouseDown to onPointerDown with e.stopPropagation() and e.nativeEvent.stopImmediatePropagation(). This blocks the pointer event from reaching dnd-kit's sensor.
+Fix the handleResizeMouseDown function in DraggableChart to:
 
-Steps:
-1. Read the DraggableChart component in C:\Users\Administrator\Desktop\claude\task\frontend\src\pages\DashboardEditorPage.tsx
-2. Find the resize handle div (around line 77)
-3. Change `onMouseDown={handleResizeMouseDown}` to use onPointerDown instead
-4. In handleResizeMouseDown, change the event type from React.MouseEvent to React.PointerEvent
-5. Add `e.nativeEvent.stopImmediatePropagation()` after `e.stopPropagation()` to also block native pointer event propagation
-6. Verify: cd C:\Users\Administrator\Desktop\claude\task\frontend && npx tsc --noEmit
-7. Report result as JSON with what was changed
+1. Use native DOM events (not React synthetic) for all listeners to ensure reliable mouseup capture
+2. On mousedown on the resize handle:
+   - Record startX, startY (e.clientX, e.clientY), startW, startH
+   - Add document.addEventListener('mousemove', ...)  
+   - Add document.addEventListener('mouseup', ...)
+3. On mousemove: calculate newW = Math.max(200, startW + e.clientX - startX), newH = Math.max(150, startH + e.clientY - startY), call onResize
+4. On mouseup: remove both event listeners
+5. The resize handle div should use onMouseDown (native, not onPointerDown) with e.stopPropagation() and e.nativeEvent.stopImmediatePropagation() to prevent dnd-kit from intercepting
+6. The handle function should take a native MouseEvent, not React.MouseEvent
+
+Also add visual feedback: change cursor on the handle to 'nwse-resize'.
+
+Verify: cd C:\Users\Administrator\Desktop\claude\task\frontend && npx tsc --noEmit
+Report JSON result.

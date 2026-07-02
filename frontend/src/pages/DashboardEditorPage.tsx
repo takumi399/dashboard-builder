@@ -46,7 +46,7 @@ const DraggableChart: React.FC<{ chart: ChartItem; dataSourceData: any; onClick:
     background: '#fff', borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', overflow: 'hidden', cursor: 'move',
   };
 
-  const handleResizeMouseDown = (e: React.PointerEvent) => {
+  const handleResizeMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation();
     e.nativeEvent.stopImmediatePropagation();
     e.preventDefault();
@@ -83,7 +83,7 @@ const DraggableChart: React.FC<{ chart: ChartItem; dataSourceData: any; onClick:
           borderRadius: '0 0 8px 0',
           zIndex: 10,
         }}
-        onPointerDown={handleResizeMouseDown}
+        onMouseDown={handleResizeMouseDown}
       />
     </div>
   );
