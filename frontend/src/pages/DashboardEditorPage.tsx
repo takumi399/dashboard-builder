@@ -37,17 +37,40 @@ const Canvas: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 };
 
 // --- 画布上的可拖拽图表 ---
-const DraggableChart: React.FC<{ chart: ChartItem; dataSourceData: any; onClick: () => void }> = ({ chart, dataSourceData, onClick }) => {
+const DraggableChart: React.FC<{ chart: ChartItem; dataSourceData: any; onClick: () => void; onResize: (id: number, w: number, h: number) => void }> = ({ chart, dataSourceData, onClick, onResize }) => {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: `chart-${chart.id}` });
+  const { attributes: resizeAttrs, listeners: resizeListeners, setNodeRef: setResizeRef, transform: resizeTransform } = useDraggable({ id: `resize-${chart.id}` });
+
   const style: React.CSSProperties = {
     position: 'absolute', left: chart.position_x, top: chart.position_y, width: chart.width, height: chart.height,
     transform: transform ? `translate(${transform.x}px, ${transform.y}px)` : undefined,
     background: '#fff', borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', overflow: 'hidden', cursor: 'move',
   };
+
+  // 缩放逻辑：在 useEffect 中检测 resize transform 并回调
+  React.useEffect(() => {
+    if (resizeTransform) {
+      const newW = Math.max(200, chart.width + resizeTransform.x);
+      const newH = Math.max(150, chart.height + resizeTransform.y);
+      onResize(chart.id, newW, newH);
+    }
+  }, [resizeTransform]);
+
   return (
     <div ref={setNodeRef} style={style} {...listeners} {...attributes} onClick={onClick}>
       <ChartRenderer chartType={chart.chart_type as any} title={chart.title} data={dataSourceData}
         queryConfig={JSON.parse(chart.query_config || '{}')} configJson={chart.config_json} />
+      {/* 缩放把手 */}
+      <div ref={setResizeRef} {...resizeAttrs} {...resizeListeners}
+        style={{
+          position: 'absolute', right: 0, bottom: 0, width: 20, height: 20,
+          cursor: 'nwse-resize',
+          background: 'linear-gradient(135deg, transparent 50%, #d9d9d9 50%)',
+          borderRadius: '0 0 8px 0',
+          zIndex: 10,
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+      />
     </div>
   );
 };
@@ -121,6 +144,11 @@ const DashboardEditorPage: React.FC = () => {
     }
   }, [charts, id]);
 
+  const handleResize = useCallback((chartId: number, newW: number, newH: number) => {
+    setCharts(prev => prev.map(c => c.id === chartId ? { ...c, width: newW, height: newH } : c));
+    chartService.update(chartId, { width: newW, height: newH }).catch(() => {});
+  }, []);
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -189,7 +217,7 @@ const DashboardEditorPage: React.FC = () => {
           <Canvas>
             {charts.map(chart => (
               <DraggableChart key={chart.id} chart={chart} dataSourceData={dataSourceData[chart.data_source_id || 0]}
-                onClick={() => setSelectedChart(chart)} />
+                onClick={() => setSelectedChart(chart)} onResize={handleResize} />
             ))}
             {charts.length === 0 && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>
