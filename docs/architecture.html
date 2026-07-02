@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard Builder — Architecture Diagram</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #020617;
+    color: #e2e8f0;
+    font-family: 'JetBrains Mono', monospace;
+    display: flex;
+    justify-content: center;
+    padding: 48px 24px;
+    min-height: 100vh;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 960px;
+  }
+
+  /* ── Title ─────────────────────────────── */
+  .title {
+    text-align: center;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: #f8fafc;
+    margin-bottom: 8px;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 13px;
+    font-weight: 400;
+    color: #64748b;
+    margin-bottom: 48px;
+  }
+
+  /* ── SVG Diagram ───────────────────────── */
+  .diagram-wrapper {
+    background: rgba(15,23,42,0.6);
+    border: 1px solid rgba(51,65,85,0.4);
+    border-radius: 16px;
+    padding: 32px 16px 16px;
+    margin-bottom: 40px;
+  }
+
+  svg { display: block; width: 100%; height: auto; }
+
+  /* ── Summary Cards ─────────────────────── */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+
+  .card {
+    background: rgba(15,23,42,0.5);
+    border: 1px solid rgba(51,65,85,0.3);
+    border-radius: 12px;
+    padding: 24px;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: rgba(51,65,85,0.6); }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .card-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .card-dot.cyan  { background: #22d3ee; box-shadow: 0 0 8px rgba(34,211,238,0.5); }
+  .card-dot.green { background: #34d399; box-shadow: 0 0 8px rgba(52,211,153,0.5); }
+  .card-dot.violet{ background: #a78bfa; box-shadow: 0 0 8px rgba(167,139,250,0.5); }
+
+  .card-title { font-size: 15px; font-weight: 600; color: #f1f5f9; }
+
+  .card-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .card-list li {
+    font-size: 12px;
+    color: #94a3b8;
+    padding-left: 14px;
+    position: relative;
+  }
+  .card-list li::before {
+    content: '›';
+    position: absolute;
+    left: 0;
+    color: #475569;
+    font-weight: 700;
+  }
+
+  /* ── Responsive ────────────────────────── */
+  @media (max-width: 720px) {
+    .cards { grid-template-columns: 1fr; }
+    .title { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <h1 class="title">Dashboard Builder Architecture</h1>
+  <p class="subtitle">System overview — layers, data flow, and technology breakdown</p>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- SVG DIAGRAM                                -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="diagram-wrapper">
+    <svg viewBox="0 0 880 580" xmlns="http://www.w3.org/2000/svg">
+
+      <defs>
+        <!-- Grid pattern -->
+        <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+          <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(51,65,85,0.12)" stroke-width="0.5"/>
+        </pattern>
+
+        <!-- Drop shadows -->
+        <filter id="shadow-cyan" x="-8%" y="-8%" width="116%" height="116%">
+          <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#22d3ee" flood-opacity="0.15"/>
+        </filter>
+        <filter id="shadow-emerald" x="-8%" y="-8%" width="116%" height="116%">
+          <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#34d399" flood-opacity="0.15"/>
+        </filter>
+        <filter id="shadow-violet" x="-8%" y="-8%" width="116%" height="116%">
+          <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#a78bfa" flood-opacity="0.15"/>
+        </filter>
+
+        <!-- Arrow markers -->
+        <marker id="arrow-cyan" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#22d3ee"/>
+        </marker>
+        <marker id="arrow-violet" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#a78bfa"/>
+        </marker>
+
+        <!-- Gradient for layer backgrounds -->
+        <linearGradient id="grad-external" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="rgba(30,41,59,0.4)"/>
+          <stop offset="100%" stop-color="rgba(30,41,59,0.25)"/>
+        </linearGradient>
+        <linearGradient id="grad-frontend" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="rgba(8,51,68,0.4)"/>
+          <stop offset="100%" stop-color="rgba(8,51,68,0.25)"/>
+        </linearGradient>
+        <linearGradient id="grad-backend" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="rgba(6,78,59,0.4)"/>
+          <stop offset="100%" stop-color="rgba(6,78,59,0.25)"/>
+        </linearGradient>
+        <linearGradient id="grad-database" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="rgba(76,29,149,0.4)"/>
+          <stop offset="100%" stop-color="rgba(76,29,149,0.25)"/>
+        </linearGradient>
+      </defs>
+
+      <!-- Grid background -->
+      <rect x="0" y="0" width="880" height="580" fill="url(#grid)" rx="12"/>
+
+      <!-- ═══════════════════════════════════════ -->
+      <!-- LAYER 1: Browser (External)            -->
+      <!-- ═══════════════════════════════════════ -->
+      <g transform="translate(110, 20)">
+        <rect x="0" y="0" width="660" height="64" rx="10"
+              fill="url(#grad-external)" stroke="#94a3b8" stroke-width="1.5" stroke-opacity="0.6"/>
+        <!-- Label area -->
+        <rect x="0" y="0" width="6" height="64" rx="3" fill="#94a3b8" opacity="0.6"/>
+        <!-- Browser icon -->
+        <text x="28" y="34" font-size="16" fill="#94a3b8" opacity="0.9">🌐</text>
+        <text x="54" y="31" font-size="14" font-weight="600" fill="#e2e8f0">Browser</text>
+        <text x="54" y="49" font-size="11" fill="#64748b">React SPA — Single Page Application</text>
+        <!-- Port badge -->
+        <rect x="560" y="18" width="82" height="28" rx="6" fill="rgba(148,163,184,0.1)" stroke="rgba(148,163,184,0.25)" stroke-width="1"/>
+        <text x="601" y="36" font-size="11" font-weight="500" fill="#94a3b8" text-anchor="middle">Port 3000</text>
+      </g>
+
+      <!-- Arrow: Browser → Vite Proxy -->
+      <line x1="440" y1="84" x2="440" y2="108" stroke="#22d3ee" stroke-width="1.8" marker-end="url(#arrow-cyan)" opacity="0.7"/>
+
+      <!-- ═══════════════════════════════════════ -->
+      <!-- LAYER 2: Vite Proxy (Frontend)         -->
+      <!-- ═══════════════════════════════════════ -->
+      <g transform="translate(110, 110)">
+        <rect x="0" y="0" width="660" height="56" rx="10"
+              fill="url(#grad-frontend)" stroke="#22d3ee" stroke-width="1.5" stroke-opacity="0.55" filter="url(#shadow-cyan)"/>
+        <rect x="0" y="0" width="6" height="56" rx="3" fill="#22d3ee" opacity="0.55"/>
+        <text x="28" y="22" font-size="14" fill="#22d3ee" opacity="0.9">⚡</text>
+        <text x="52" y="20" font-size="13" font-weight="600" fill="#e2e8f0">Vite Dev Server</text>
+        <text x="52" y="39" font-size="11" fill="#64748b">Proxy: /api → localhost:8000</text>
+        <!-- Arrow indicator -->
+        <text x="490" y="33" font-size="10" fill="#22d3ee" opacity="0.6">/api ──▶ Port 8000</text>
+      </g>
+
+      <!-- Arrow: Vite Proxy → FastAPI -->
+      <line x1="440" y1="166" x2="440" y2="190" stroke="#22d3ee" stroke-width="1.8" marker-end="url(#arrow-cyan)" opacity="0.7"/>
+
+      <!-- ═══════════════════════════════════════ -->
+      <!-- LAYER 3: FastAPI Backend (Backend)      -->
+      <!-- ═══════════════════════════════════════ -->
+      <g transform="translate(110, 192)">
+        <rect x="0" y="0" width="660" height="104" rx="10"
+              fill="url(#grad-backend)" stroke="#34d399" stroke-width="1.5" stroke-opacity="0.55" filter="url(#shadow-emerald)"/>
+        <rect x="0" y="0" width="6" height="104" rx="3" fill="#34d399" opacity="0.55"/>
+        <text x="28" y="22" font-size="14" fill="#34d399" opacity="0.9">🐍</text>
+        <text x="52" y="20" font-size="13" font-weight="600" fill="#e2e8f0">FastAPI Backend</text>
+        <text x="52" y="39" font-size="11" fill="#64748b">Python 3.11 · Async · RESTful JSON API</text>
+
+        <!-- Sub-components -->
+        <!-- Auth -->
+        <rect x="28" y="52" width="134" height="40" rx="7"
+              fill="rgba(6,78,59,0.3)" stroke="#34d399" stroke-width="1" stroke-opacity="0.3"/>
+        <text x="95" y="76" font-size="11" font-weight="500" fill="#a7f3d0" text-anchor="middle">Auth</text>
+        <text x="95" y="89" font-size="9" fill="#6ee7b7" text-anchor="middle" opacity="0.6">JWT + bcrypt</text>
+
+        <!-- Dashboards -->
+        <rect x="176" y="52" width="134" height="40" rx="7"
+              fill="rgba(6,78,59,0.3)" stroke="#34d399" stroke-width="1" stroke-opacity="0.3"/>
+        <text x="243" y="76" font-size="11" font-weight="500" fill="#a7f3d0" text-anchor="middle">Dashboards</text>
+        <text x="243" y="89" font-size="9" fill="#6ee7b7" text-anchor="middle" opacity="0.6">CRUD + Publish</text>
+
+        <!-- Datasources -->
+        <rect x="324" y="52" width="134" height="40" rx="7"
+              fill="rgba(6,78,59,0.3)" stroke="#34d399" stroke-width="1" stroke-opacity="0.3"/>
+        <text x="391" y="76" font-size="11" font-weight="500" fill="#a7f3d0" text-anchor="middle">Datasources</text>
+        <text x="391" y="89" font-size="9" fill="#6ee7b7" text-anchor="middle" opacity="0.6">CSV Upload</text>
+
+        <!-- Public -->
+        <rect x="472" y="52" width="134" height="40" rx="7"
+              fill="rgba(6,78,59,0.3)" stroke="#34d399" stroke-width="1" stroke-opacity="0.3"/>
+        <text x="539" y="76" font-size="11" font-weight="500" fill="#a7f3d0" text-anchor="middle">Public</text>
+        <text x="539" y="89" font-size="9" fill="#6ee7b7" text-anchor="middle" opacity="0.6">Share Token</text>
+      </g>
+
+      <!-- Dashed arrow: FastAPI ↔ SQLite -->
+      <g opacity="0.55">
+        <line x1="350" y1="296" x2="350" y2="330" stroke="#a78bfa" stroke-width="1.5"
+              stroke-dasharray="6,3" marker-end="url(#arrow-violet)"/>
+        <line x1="530" y1="330" x2="530" y2="296" stroke="#a78bfa" stroke-width="1.5"
+              stroke-dasharray="6,3" marker-end="url(#arrow-violet)"/>
+      </g>
+
+      <!-- ═══════════════════════════════════════ -->
+      <!-- LAYER 4: SQLite Database (Database)     -->
+      <!-- ═══════════════════════════════════════ -->
+      <g transform="translate(110, 332)">
+        <rect x="0" y="0" width="660" height="56" rx="10"
+              fill="url(#grad-database)" stroke="#a78bfa" stroke-width="1.5" stroke-opacity="0.55" filter="url(#shadow-violet)"/>
+        <rect x="0" y="0" width="6" height="56" rx="3" fill="#a78bfa" opacity="0.55"/>
+        <text x="28" y="22" font-size="14" fill="#a78bfa" opacity="0.9">🗄️</text>
+        <text x="52" y="20" font-size="13" font-weight="600" fill="#e2e8f0">SQLite Database</text>
+        <text x="52" y="39" font-size="11" fill="#64748b">SQLAlchemy 2.0 (async) · PostgreSQL-ready</text>
+      </g>
+
+      <!-- ═══════════════════════════════════════ -->
+      <!-- Legend                                  -->
+      <!-- ═══════════════════════════════════════ -->
+      <g transform="translate(24, 540)">
+        <text x="0" y="0" font-size="10" font-weight="500" fill="#475569">LEGEND</text>
+        <rect x="0" y="8" width="10" height="10" rx="2" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1"/>
+        <text x="15" y="17" font-size="9" fill="#64748b">Frontend</text>
+        <rect x="85" y="8" width="10" height="10" rx="2" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1"/>
+        <text x="100" y="17" font-size="9" fill="#64748b">Backend</text>
+        <rect x="170" y="8" width="10" height="10" rx="2" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="185" y="17" font-size="9" fill="#64748b">Database</text>
+        <rect x="260" y="8" width="10" height="10" rx="2" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1"/>
+        <text x="275" y="17" font-size="9" fill="#64748b">External</text>
+        <!-- Arrow legend -->
+        <line x1="355" y1="13" x2="385" y2="13" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrow-cyan)" opacity="0.7"/>
+        <text x="392" y="17" font-size="9" fill="#64748b">HTTP</text>
+        <line x1="440" y1="13" x2="470" y2="13" stroke="#a78bfa" stroke-width="1.2" stroke-dasharray="5,2" opacity="0.55"/>
+        <text x="477" y="17" font-size="9" fill="#64748b">SQL</text>
+      </g>
+
+      <!-- GitHub badge (external, side) -->
+      <g transform="translate(702, 332)">
+        <rect x="0" y="0" width="140" height="56" rx="10"
+              fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1" stroke-opacity="0.35"/>
+        <text x="70" y="24" font-size="12" font-weight="600" fill="#94a3b8" text-anchor="middle">GitHub Actions</text>
+        <text x="70" y="42" font-size="10" fill="#64748b" text-anchor="middle">CI/CD Pipeline</text>
+      </g>
+
+    </svg>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- SUMMARY CARDS                              -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="cards">
+    <!-- Card 1: Frontend -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-dot cyan"></span>
+        <span class="card-title">Frontend</span>
+      </div>
+      <ul class="card-list">
+        <li>React 18 + TypeScript</li>
+        <li>Vite (dev server + build)</li>
+        <li>Ant Design 5 (UI components)</li>
+        <li>ECharts 5 (chart rendering)</li>
+        <li>react-rnd (drag &amp; resize)</li>
+        <li>Zustand (state management)</li>
+        <li>React Router DOM v7</li>
+        <li>Axios (HTTP client)</li>
+      </ul>
+    </div>
+
+    <!-- Card 2: Backend -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-dot green"></span>
+        <span class="card-title">Backend</span>
+      </div>
+      <ul class="card-list">
+        <li>Python 3.11</li>
+        <li>FastAPI (REST framework)</li>
+        <li>SQLAlchemy 2.0 (async ORM)</li>
+        <li>JWT + bcrypt (passlib)</li>
+        <li>Pydantic v2 (validation)</li>
+        <li>python-jose (token handling)</li>
+        <li>CSV parsing + JSON storage</li>
+      </ul>
+    </div>
+
+    <!-- Card 3: Infrastructure -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-dot violet"></span>
+        <span class="card-title">Infrastructure</span>
+      </div>
+      <ul class="card-list">
+        <li>Docker Compose (full stack)</li>
+        <li>SQLite (development)</li>
+        <li>PostgreSQL-ready (prod)</li>
+        <li>GitHub Actions CI</li>
+        <li>TypeScript strict mode</li>
+        <li>Oxlint (code quality)</li>
+        <li>MIT License</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,26 +1,38 @@
 # Dashboard Builder — Low-Code Data Dashboard Platform
 
+[![GitHub](https://img.shields.io/badge/GitHub-dashboard--builder-181717?logo=github)](https://github.com/your-org/dashboard-builder)
+[![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
+
 A full-stack low-code dashboard builder where users can drag-and-drop chart components onto a canvas, bind data sources, and publish interactive dashboards.
 
 ## Features
 
-- **Drag-and-Drop Editor** — Drag bar, line, and pie charts onto a canvas. Move and resize freely.
-- **Data Source Management** — Upload CSV files and bind them to charts.
-- **Chart Rendering** — ECharts-powered interactive charts (bar, line, pie).
-- **JWT Authentication** — Secure user registration and login with bcrypt password hashing.
-- **Dashboard Publishing** — One-click publish with shareable public links.
-- **Responsive UI** — Built with Ant Design 5 for a polished enterprise look.
+- [x] **Drag-and-Drop Editor** — Drag bar, line, and pie charts onto a canvas. Move and resize freely with react-rnd.
+- [x] **Chart Rendering** — ECharts 5-powered interactive charts (bar, line, pie) with configurable options.
+- [x] **Data Source Management** — Upload CSV files and bind them to charts with column mapping.
+- [x] **JWT Authentication** — Secure user registration and login with bcrypt password hashing.
+- [x] **Dashboard Publishing** — One-click publish with shareable public links (no auth required).
+- [x] **Responsive UI** — Built with Ant Design 5 for a polished enterprise look.
+- [x] **Vite Dev Proxy** — `/api` requests proxied to backend, avoiding CORS issues in development.
+- [ ] **Multi-tenant Workspaces** — Organization-scoped dashboards and data sources.
+- [ ] **Real-time Collaboration** — WebSocket-based live editing with multiple users.
+- [ ] **Advanced Chart Types** — Scatter, heatmap, funnel, and custom ECharts options.
+- [ ] **PostgreSQL Production** — Swap SQLite for PostgreSQL with zero code changes.
+
+## Architecture
+
+[View Architecture Diagram](docs/architecture.html)
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 18 + TypeScript + Vite + Ant Design 5 + ECharts 5 + @dnd-kit |
+| Frontend | React 18 + TypeScript + Vite + Ant Design 5 + ECharts 5 + react-rnd |
 | Backend | Python 3.11 + FastAPI + SQLAlchemy 2.0 (async) + Pydantic v2 |
 | Database | SQLite (swap to PostgreSQL via SQLAlchemy) |
 | Auth | JWT (python-jose) + bcrypt (passlib) |
 | State | Zustand |
-| Build | Vite + TypeScript strict mode |
+| Build | Vite + TypeScript strict mode + Oxlint |
 
 ## Quick Start
 
@@ -77,6 +89,13 @@ docker-compose up
 | GET | /api/datasources/:id/data | Get data source content |
 | GET | /api/public/dashboards/:token | Public dashboard view |
 
+## Screenshots
+
+<!-- TODO: Add screenshots -->
+| Login | Dashboard List | Editor |
+|-------|---------------|--------|
+| ![login](screenshots/login.png) | ![list](screenshots/list.png) | ![editor](screenshots/editor.png) |
+
 ## Project Structure
 
 ```
@@ -105,7 +124,7 @@ task/
 - **Async database ops**: All endpoints use async/await for non-blocking I/O.
 - **Zustand over Redux**: Minimal boilerplate. Auth state is simple — Zustand fits perfectly.
 - **Model validation with Pydantic v2**: Automatic request validation and response serialization from ORM models.
-- **@dnd-kit over react-beautiful-dnd**: Actively maintained, works with React 18+, supports both sortable and free-drag use cases.
+- **react-rnd for drag-and-drop**: Replaced @dnd-kit for canvas interactions. Provides native drag, resize, and absolute positioning out of the box.
 
 ## License
 

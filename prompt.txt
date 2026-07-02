@@ -1,31 +1,62 @@
-Fix: react-rnd crashes with "process is not defined" in Vite. Vite doesn't provide process.env in the browser.
+Improve the README.md and add an architecture diagram for the dashboard-builder project at C:\Users\Administrator\Desktop\claude\task\.
 
-Fix C:\Users\Administrator\Desktop\claude\task\frontend\vite.config.ts:
-Add a `define` field to inject process.env.NODE_ENV:
+## PART 1: Generate Architecture Diagram
 
-```typescript
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+Create C:\Users\Administrator\Desktop\claude\task\docs\architecture.html — a dark-themed SVG architecture diagram using the following design system:
 
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    port: 3000,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-    },
-  },
-  define: {
-    'process.env.NODE_ENV': JSON.stringify('development'),
-  },
-})
+- Background: slate-950 (#020617) with subtle 40px grid
+- Font: JetBrains Mono, loaded from Google Fonts
+- Frontend components (React, Vite, Ant Design, ECharts, dnd-kit): fill rgba(8,51,68,0.4), stroke #22d3ee (cyan)
+- Backend components (FastAPI, SQLAlchemy, JWT, Pydantic): fill rgba(6,78,59,0.4), stroke #34d399 (emerald)
+- Database (SQLite): fill rgba(76,29,149,0.4), stroke #a78bfa (violet)
+- External (Browser, GitHub): fill rgba(30,41,59,0.5), stroke #94a3b8 (slate)
+
+Layers (top to bottom):
+1. Browser (React SPA) — port 3000
+2. Vite Proxy /api → port 8000
+3. FastAPI Backend — auth, dashboards, datasources, public
+4. SQLite Database
+
+Show arrows between layers:
+- Browser → Vite Proxy → FastAPI (standard arrows, cyan)
+- FastAPI ↔ SQLite (dashed, violet)
+
+Include:
+- A title "Dashboard Builder Architecture"
+- Three summary cards below the diagram:
+  - Card 1: "Frontend" — React 18, TypeScript, Vite, Ant Design 5, ECharts 5, react-rnd, Zustand
+  - Card 2: "Backend" — Python 3.11, FastAPI, SQLAlchemy 2.0 (async), JWT + bcrypt, Pydantic v2
+  - Card 3: "Infrastructure" — Docker Compose, SQLite (dev), GitHub Actions CI
+
+The HTML should be self-contained, single file, no JS, pure SVG + CSS. Works offline in any browser.
+
+## PART 2: Update README.md
+
+Read C:\Users\Administrator\Desktop\claude\task\README.md and improve it:
+
+1. Add a "Screenshots" section with placeholder comments (user will add real screenshots later):
+```markdown
+## Screenshots
+
+<!-- TODO: Add screenshots -->
+| Login | Dashboard List | Editor |
+|-------|---------------|--------|
+| ![login](screenshots/login.png) | ![list](screenshots/list.png) | ![editor](screenshots/editor.png) |
 ```
 
-Steps:
-1. Read C:\Users\Administrator\Desktop\claude\task\frontend\vite.config.ts
-2. Add the define field as shown above
-3. Verify: cd C:\Users\Administrator\Desktop\claude\task\frontend && npx tsc --noEmit
-4. Report JSON result
+2. Add a link to the architecture diagram:
+```markdown
+## Architecture
+
+[View Architecture Diagram](docs/architecture.html)
+```
+
+3. Add a "Features" checkbox list showing what's implemented
+4. Add the GitHub repo URL at the top
+5. Polish the formatting
+
+## PART 3: Verify
+
+- Check the architecture.html file exists and has reasonable content
+- Check README.md is updated
+- Report JSON result
