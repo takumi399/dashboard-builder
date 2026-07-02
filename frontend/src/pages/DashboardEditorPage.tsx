@@ -243,6 +243,7 @@ const DashboardEditorPage: React.FC = () => {
             </div>
           )}
         </div>
+        </div>
       </DndContext>
     </div>
   );
