@@ -17,17 +17,22 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ chartType, title, data, q
     const rows = data?.rows || [];
     const columns = data?.columns || [];
 
-    const xCol = queryConfig?.xColumn || columns[0] || 'name';
-    const yCol = queryConfig?.yColumn || columns[1] || 'value';
-    const nameCol = queryConfig?.nameColumn || columns[0] || 'name';
-    const valueCol = queryConfig?.valueColumn || columns[1] || 'value';
+    const xCol = queryConfig?.xColumn || columns[0] || '分类';
+    const yCol = queryConfig?.yColumn || columns[1] || '数值';
+    const nameCol = queryConfig?.nameColumn || columns[0] || '分类';
+    const valueCol = queryConfig?.valueColumn || columns[1] || '数值';
 
     const xData = rows.map(r => r[xCol] || '');
     const yData = rows.map(r => parseFloat(r[yCol]) || 0);
 
+    // 通用 tooltip：显示字段名 + 值
+    const tooltipFormatter = (params: any) => {
+      if (Array.isArray(params)) params = params[0];
+      return `${xCol}：${params.name}<br/>${yCol}：${params.value}`;
+    };
+
     const baseOption: any = {
       title: { text: title, left: 'center', textStyle: { fontSize: 14 } },
-      tooltip: {},
       ...customConfig,
     };
 
@@ -35,22 +40,74 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ chartType, title, data, q
       case 'bar':
         return {
           ...baseOption,
-          xAxis: { type: 'category', data: xData },
-          yAxis: { type: 'value' },
+          tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'shadow' },
+            formatter: (params: any) => {
+              const p = Array.isArray(params) ? params[0] : params;
+              return `${xCol}：${p.name}<br/>${yCol}：${p.value}`;
+            },
+          },
+          xAxis: {
+            type: 'category',
+            data: xData,
+            name: xCol,
+            nameLocation: 'center',
+            nameGap: 30,
+          },
+          yAxis: {
+            type: 'value',
+            name: yCol,
+          },
           series: [{ type: 'bar', data: yData, itemStyle: { color: '#1677ff' } }],
         };
       case 'line':
         return {
           ...baseOption,
-          xAxis: { type: 'category', data: xData },
-          yAxis: { type: 'value' },
+          tooltip: {
+            trigger: 'axis',
+            formatter: (params: any) => {
+              const p = Array.isArray(params) ? params[0] : params;
+              return `${xCol}：${p.name}<br/>${yCol}：${p.value}`;
+            },
+          },
+          xAxis: {
+            type: 'category',
+            data: xData,
+            name: xCol,
+            nameLocation: 'center',
+            nameGap: 30,
+          },
+          yAxis: {
+            type: 'value',
+            name: yCol,
+          },
           series: [{ type: 'line', data: yData, smooth: true, itemStyle: { color: '#1677ff' } }],
         };
       case 'pie':
         const pieData = rows.map(r => ({ name: r[nameCol] || '', value: parseFloat(r[valueCol]) || 0 }));
         return {
           ...baseOption,
-          series: [{ type: 'pie', data: pieData, radius: ['30%', '65%'], label: { formatter: '{b}: {c}' } }],
+          tooltip: {
+            trigger: 'item',
+            formatter: (params: any) => {
+              return `${nameCol}：${params.name}<br/>${valueCol}：${params.value} (${params.percent}%)`;
+            },
+          },
+          series: [{
+            type: 'pie',
+            data: pieData,
+            radius: ['30%', '65%'],
+            label: {
+              formatter: `{b}\n${valueCol}: {c}`,
+            },
+            emphasis: {
+              label: {
+                fontSize: 16,
+                fontWeight: 'bold',
+              },
+            },
+          }],
         };
       default:
         return baseOption;
