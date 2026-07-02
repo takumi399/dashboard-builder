@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Card, Row, Col, Modal, Input, Typography, Empty, Space, Tag, Popconfirm, Spin, App } from 'antd';
-import { PlusOutlined, DeleteOutlined, EyeOutlined, LogoutOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, EyeOutlined, LogoutOutlined, DatabaseOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { dashboardService } from '../services/dashboard';
@@ -63,6 +63,7 @@ const DashboardListPage: React.FC = () => {
         <Title level={3} style={{ margin: 0 }}>我的看板</Title>
         <Space>
           <Text>欢迎，{user?.username}</Text>
+          <Button icon={<DatabaseOutlined />} onClick={() => navigate('/datasources')}>数据源</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>新建看板</Button>
           <Button icon={<LogoutOutlined />} onClick={() => { logout(); navigate('/login'); }}>退出登录</Button>
         </Space>
