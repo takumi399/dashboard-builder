@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Space, Typography, Spin, Select, Input, InputNumber, Empty, App } from 'antd';
-import { SaveOutlined, EyeOutlined, ArrowLeftOutlined, BarChartOutlined, LineChartOutlined, PieChartOutlined } from '@ant-design/icons';
+import { SaveOutlined, EyeOutlined, ArrowLeftOutlined, BarChartOutlined, LineChartOutlined, PieChartOutlined, NumberOutlined, TableOutlined } from '@ant-design/icons';
 import { DndContext, useDraggable, useDroppable, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
 import ChartRenderer from '../components/charts/ChartRenderer';
@@ -96,7 +96,7 @@ const DashboardEditorPage: React.FC = () => {
     // 从面板拖到画布
     if (String(active.id).startsWith('palette-') && over.id === 'canvas') {
       const chartType = active.data?.current?.chartType || 'bar';
-      const names: Record<string,string> = { bar: '柱状图', line: '折线图', pie: '饼图' };
+      const names: Record<string,string> = { bar: '柱状图', line: '折线图', pie: '饼图', card: '指标卡', table: '数据表' };
       try {
         const newChart = await chartService.create(Number(id), {
           chart_type: chartType, title: names[chartType] || '新图表',
@@ -181,6 +181,8 @@ const DashboardEditorPage: React.FC = () => {
             <PaletteItem type="bar" icon={<BarChartOutlined />} label="柱状图" />
             <PaletteItem type="line" icon={<LineChartOutlined />} label="折线图" />
             <PaletteItem type="pie" icon={<PieChartOutlined />} label="饼图" />
+            <PaletteItem type="card" icon={<NumberOutlined />} label="指标卡" />
+            <PaletteItem type="table" icon={<TableOutlined />} label="数据表" />
           </div>
 
           {/* 中间画布 */}
