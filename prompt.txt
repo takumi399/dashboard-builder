@@ -1,20 +1,14 @@
-Fix the chart resize handle in C:\Users\Administrator\Desktop\claude\task\frontend\src\pages\DashboardEditorPage.tsx.
+Fix the resize handle in C:\Users\Administrator\Desktop\claude\task\frontend\src\pages\DashboardEditorPage.tsx.
 
-Current problem: the resize handle uses @dnd-kit useDraggable with cumulative transform deltas, which makes the resize feel disconnected from the mouse. The chart grows uncontrollably instead of following the cursor precisely.
+Problem: @dnd-kit's PointerSensor listens for pointer events, but the resize handle uses onMouseDown with stopPropagation. This doesn't stop pointer events from bubbling up to the parent div that has dnd-kit's drag listeners. So dragging the resize handle also moves the chart.
 
-Fix: Replace the dnd-kit resize approach with native mouse events (onMouseDown/onMouseMove/onMouseUp). The resize should follow the cursor exactly — when the user drags the resize handle, the width/height should directly track the mouse position relative to the chart's initial top-left corner.
+Fix: Change the resize handle's event from onMouseDown to onPointerDown with e.stopPropagation() and e.nativeEvent.stopImmediatePropagation(). This blocks the pointer event from reaching dnd-kit's sensor.
 
 Steps:
-1. Read C:\Users\Administrator\Desktop\claude\task\frontend\src\pages\DashboardEditorPage.tsx
-2. In DraggableChart, remove the useDraggable for resize (keep the one for moving)
-3. Remove the React.useEffect for resizeTransform
-4. Add a native mousedown handler on the resize handle that:
-   - Records the initial mouse position and initial chart size
-   - Adds mousemove/mouseup listeners on document
-   - On mousemove: calculates new width = initialWidth + (currentX - startX), new height = initialHeight + (currentY - startY), clamped to min 200x150
-   - Calls onResize(chartId, newW, newH)
-   - On mouseup: removes the listeners
-5. The resize handle div should no longer have {...resizeAttrs} {...resizeListeners} or setResizeRef
-6. Keep the stopPropagation on mousedown to prevent triggering the parent drag
-7. Verify with: cd C:\Users\Administrator\Desktop\claude\task\frontend && npx tsc --noEmit
-8. Report the result
+1. Read the DraggableChart component in C:\Users\Administrator\Desktop\claude\task\frontend\src\pages\DashboardEditorPage.tsx
+2. Find the resize handle div (around line 77)
+3. Change `onMouseDown={handleResizeMouseDown}` to use onPointerDown instead
+4. In handleResizeMouseDown, change the event type from React.MouseEvent to React.PointerEvent
+5. Add `e.nativeEvent.stopImmediatePropagation()` after `e.stopPropagation()` to also block native pointer event propagation
+6. Verify: cd C:\Users\Administrator\Desktop\claude\task\frontend && npx tsc --noEmit
+7. Report result as JSON with what was changed
