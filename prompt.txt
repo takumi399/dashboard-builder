@@ -1,34 +1,31 @@
-Refactor the chart drag-and-resize in the dashboard editor to use the react-rnd library instead of the current fragile combination of @dnd-kit + native mouse events. react-rnd handles both dragging and resizing natively without conflicts.
+Fix: react-rnd crashes with "process is not defined" in Vite. Vite doesn't provide process.env in the browser.
+
+Fix C:\Users\Administrator\Desktop\claude\task\frontend\vite.config.ts:
+Add a `define` field to inject process.env.NODE_ENV:
+
+```typescript
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    port: 3000,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+    },
+  },
+  define: {
+    'process.env.NODE_ENV': JSON.stringify('development'),
+  },
+})
+```
 
 Steps:
-1. Install react-rnd: cd C:\Users\Administrator\Desktop\claude\task\frontend && npm install react-rnd
-2. Install types: npm install -D @types/react-rnd (if available, otherwise skip)
-3. Read C:\Users\Administrator\Desktop\claude\task\frontend\src\pages\DashboardEditorPage.tsx fully
-4. Import { Rnd } from 'react-rnd' at the top
-5. Replace the DraggableChart component:
-   - Remove the useDraggable for chart movement
-   - Remove the native mouse event resize handler
-   - Replace with <Rnd> component that wraps ChartRenderer
-   - Rnd props:
-     - position: {{ x: chart.position_x, y: chart.position_y }}
-     - size: {{ width: chart.width, height: chart.height }}
-     - minWidth: 200, minHeight: 150
-     - bounds: "parent" (keep within canvas)
-     - onDragStop: (e, d) => call onResize with chart.id, but for position. Actually, separate the callbacks. Create an onMove callback for position changes.
-     - onResizeStop: (e, direction, ref, delta, position) => call onResize with chart.id, newWidth, newHeight, and update position if it changed
-     - style and resizeHandleStyles to make it look clean
-     - enableResizing: {{ bottomRight: true }} (only bottom-right corner)
-     - dragHandleClassName or use a specific selector: make the title bar or the whole chart draggable, but NOT the chart content area (so clicking on chart selects it, dragging the border/title moves it)
-   - onClick should still work for selecting the chart
-6. Update the DraggableChart prop interface:
-   - Change onResize to accept (id: number, width: number, height: number, x?: number, y?: number)
-   - Add onMove: (id: number, x: number, y: number) => void  
-7. In the main DashboardEditorPage:
-   - Update handleResize to also accept position
-   - Add handleMove for position updates
-   - Update the DraggableChart usage to pass both callbacks
-8. Remove unused @dnd-kit imports if DraggableChart was the only consumer (but PaletteItem and Canvas still use useDraggable/useDroppable, so keep those imports)
-9. The DndContext for drag-from-palette should still work - Rnd handles chart movement internally
-10. Verify: cd C:\Users\Administrator\Desktop\claude\task\frontend && npx tsc --noEmit
-11. Verify build: npm run build 2>&1 | tail -5
-12. Report JSON result with what was changed and whether it compiles
+1. Read C:\Users\Administrator\Desktop\claude\task\frontend\vite.config.ts
+2. Add the define field as shown above
+3. Verify: cd C:\Users\Administrator\Desktop\claude\task\frontend && npx tsc --noEmit
+4. Report JSON result
