@@ -31,7 +31,7 @@ const DashboardViewPage: React.FC = () => {
   }, [token]);
 
   if (loading) return <div style={{ display: 'flex', justifyContent: 'center', padding: 100 }}><Spin size="large" /></div>;
-  if (!dashboard) return <div style={{ textAlign: 'center', padding: 100 }}><Title level={4}>Dashboard not found</Title></div>;
+  if (!dashboard) return <div style={{ textAlign: 'center', padding: 100 }}><Title level={4}>看板未找到</Title></div>;
 
   return (
     <div style={{ padding: 24 }}>

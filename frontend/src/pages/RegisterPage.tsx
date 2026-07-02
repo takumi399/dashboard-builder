@@ -17,10 +17,10 @@ const RegisterPage: React.FC = () => {
     try {
       const res = await authService.register(values);
       setAuth(res.access_token, res.user);
-      message.success('Registration successful!');
+      message.success('注册成功');
       navigate('/dashboards');
     } catch (err: any) {
-      message.error(err.response?.data?.detail || 'Registration failed');
+      message.error(err.response?.data?.detail || '注册失败');
     } finally {
       setLoading(false);
     }
@@ -29,24 +29,24 @@ const RegisterPage: React.FC = () => {
   return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: '#f0f2f5' }}>
       <Card style={{ width: 400 }}>
-        <Title level={3} style={{ textAlign: 'center' }}>Create Account</Title>
+        <Title level={3} style={{ textAlign: 'center' }}>创建账号</Title>
         <Form name="register" onFinish={onFinish} size="large">
-          <Form.Item name="username" rules={[{ required: true, min: 3, message: 'Username must be at least 3 characters' }]}>
-            <Input prefix={<UserOutlined />} placeholder="Username" />
+          <Form.Item name="username" rules={[{ required: true, min: 3, message: '用户名至少需要3个字符' }]}>
+            <Input prefix={<UserOutlined />} placeholder="用户名" />
           </Form.Item>
-          <Form.Item name="email" rules={[{ required: true, type: 'email', message: 'Please enter a valid email' }]}>
-            <Input prefix={<MailOutlined />} placeholder="Email" />
+          <Form.Item name="email" rules={[{ required: true, type: 'email', message: '请输入有效的邮箱地址' }]}>
+            <Input prefix={<MailOutlined />} placeholder="邮箱" />
           </Form.Item>
-          <Form.Item name="password" rules={[{ required: true, min: 6, message: 'Password must be at least 6 characters' }]}>
-            <Input.Password prefix={<LockOutlined />} placeholder="Password" />
+          <Form.Item name="password" rules={[{ required: true, min: 6, message: '密码至少需要6个字符' }]}>
+            <Input.Password prefix={<LockOutlined />} placeholder="密码" />
           </Form.Item>
           <Form.Item>
             <Button type="primary" htmlType="submit" loading={loading} block>
-              Register
+              注册
             </Button>
           </Form.Item>
           <div style={{ textAlign: 'center' }}>
-            Already have an account? <Link to="/login">Log In</Link>
+            已有账号？<Link to="/login">立即登录</Link>
           </div>
         </Form>
       </Card>

@@ -17,7 +17,6 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ chartType, title, data, q
     const rows = data?.rows || [];
     const columns = data?.columns || [];
 
-    // Auto-detect columns if not specified
     const xCol = queryConfig?.xColumn || columns[0] || 'name';
     const yCol = queryConfig?.yColumn || columns[1] || 'value';
     const nameCol = queryConfig?.nameColumn || columns[0] || 'name';
@@ -61,7 +60,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ chartType, title, data, q
   if (!data || !data.rows?.length) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999', border: '1px dashed #d9d9d9', borderRadius: 4 }}>
-        <span>{title} - No data. Bind a data source.</span>
+        <span>{title} - 暂无数据，请绑定数据源</span>
       </div>
     );
   }
