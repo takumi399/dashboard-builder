@@ -31,7 +31,13 @@ const DashboardListPage: React.FC = () => {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchDashboards(); }, []);
+  useEffect(() => {
+    if (!useAuthStore.getState().token) {
+      navigate('/login');
+      return;
+    }
+    fetchDashboards();
+  }, []);
 
   const handleCreate = async () => {
     if (!newName.trim()) return;

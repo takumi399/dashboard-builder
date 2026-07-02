@@ -6,6 +6,8 @@ import { dataSourceService } from '../services/dashboard';
 
 const { Title } = Typography;
 
+import { useAuthStore } from '../store/authStore';
+
 const DataSourcePage: React.FC = () => {
   const [sources, setSources] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,7 +22,13 @@ const DataSourcePage: React.FC = () => {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchSources(); }, []);
+  useEffect(() => {
+    if (!useAuthStore.getState().token) {
+      navigate('/login');
+      return;
+    }
+    fetchSources();
+  }, []);
 
   const handleUpload = async () => {
     if (!name.trim() || !fileRef.current) return;
