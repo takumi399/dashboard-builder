@@ -64,19 +64,22 @@ export function useWebSocket(dashboardId: string | undefined, token: string | nu
 
         // 处理系统消息
         switch (msg.type) {
-          case 'online_users':
-            setOnlineUsers((msg.users as OnlineUser[]) || []);
+          case 'online_users': {
+            const users = (msg.users as OnlineUser[]) || [];
+            // 按 user_id 去重（防止 StrictMode 双连接导致重复）
+            const map = new Map(users.map(u => [u.user_id, u]));
+            setOnlineUsers(Array.from(map.values()));
             break;
+          }
           case 'user_joined':
             setOnlineUsers((prev) => {
-              const filtered = prev.filter((u) => u.user_id !== msg.user_id);
-              return [
-                ...filtered,
-                {
-                  user_id: msg.user_id as number,
-                  username: msg.username as string,
-                },
-              ];
+              // 用 Map 按 user_id 去重
+              const map = new Map(prev.map(u => [u.user_id, u]));
+              map.set(msg.user_id as number, {
+                user_id: msg.user_id as number,
+                username: msg.username as string,
+              });
+              return Array.from(map.values());
             });
             break;
           case 'user_left':
