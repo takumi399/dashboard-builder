@@ -44,9 +44,10 @@ class DataSource(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     name = Column(String(100), nullable=False)
-    source_type = Column(String(20), nullable=False)
+    source_type = Column(String(20), nullable=False)  # "csv" | "sql"
     config_json = Column(Text, default="{}")
     raw_data = Column(Text, nullable=True)
+    connection_config = Column(Text, nullable=True)  # JSON: {db_type, host, port, database, username, password}
     created_at = Column(DateTime, server_default=func.now())
 
     owner = relationship("User", backref="data_sources")

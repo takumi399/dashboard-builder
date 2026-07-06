@@ -28,10 +28,29 @@ export const chartService = {
   delete: (chartId: number) => api.delete(`/dashboards/charts/${chartId}`),
 };
 
+export interface SQLConnectionConfig {
+  db_type: string;   // "mysql" | "postgresql" | "sqlite"
+  host?: string;
+  port?: number;
+  database?: string;
+  username?: string;
+  password?: string;
+}
+
+export interface SQLExecuteResult {
+  columns: string[];
+  rows: Record<string, any>[];
+  row_count: number;
+}
+
 export const dataSourceService = {
   list: () => api.get<any[]>('/datasources').then(r => r.data),
+  create: (data: { name: string; source_type: string; connection_config?: string; config_json?: string; raw_data?: string }) =>
+    api.post<any>('/datasources', data).then(r => r.data),
   upload: (name: string, file: File) => { const fd = new FormData(); fd.append('file', file); return api.post(`/datasources/upload?name=${encodeURIComponent(name)}`, fd).then(r => r.data); },
   getData: (id: number) => api.get<any>(`/datasources/${id}/data`).then(r => r.data),
+  executeSql: (datasourceId: number, query: string) =>
+    api.post<SQLExecuteResult>('/datasources/sql/execute', { datasource_id: datasourceId, query }).then(r => r.data),
   delete: (id: number) => api.delete(`/datasources/${id}`),
 };
 

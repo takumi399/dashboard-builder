@@ -1,12 +1,13 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Button, Space, Typography, Spin, Select, Input, InputNumber, Empty, App } from 'antd';
-import { SaveOutlined, EyeOutlined, ArrowLeftOutlined, BarChartOutlined, LineChartOutlined, PieChartOutlined, NumberOutlined, TableOutlined } from '@ant-design/icons';
+import { Button, Space, Typography, Spin, Select, Input, InputNumber, Empty, App, Drawer } from 'antd';
+import { SaveOutlined, EyeOutlined, ArrowLeftOutlined, BarChartOutlined, LineChartOutlined, PieChartOutlined, NumberOutlined, TableOutlined, CodeOutlined } from '@ant-design/icons';
 import { DndContext, useDraggable, useDroppable, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { Rnd } from 'react-rnd';
 import ChartRenderer from '../components/charts/ChartRenderer';
-import { dashboardService, chartService, dataSourceService } from '../services/dashboard';
+import SqlQueryEditor from '../components/SqlQueryEditor';
+import { dashboardService, chartService, dataSourceService, SQLExecuteResult } from '../services/dashboard';
 
 const { Title, Text } = Typography;
 
@@ -101,6 +102,10 @@ const DashboardEditorPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [selectedChart, setSelectedChart] = useState<ChartItem | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // ── SQL 查询相关状态 ──
+  const [sqlDrawerOpen, setSqlDrawerOpen] = useState(false);
+  const [appliedSqlData, setAppliedSqlData] = useState<Record<number, SQLExecuteResult>>({});
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -211,6 +216,7 @@ const DashboardEditorPage: React.FC = () => {
           <Title level={5} style={{ margin: 0 }}>{dashboard?.name}</Title>
         </Space>
         <Space>
+          <Button icon={<CodeOutlined />} onClick={() => setSqlDrawerOpen(true)}>SQL 查询</Button>
           <Button icon={<SaveOutlined />} type="primary" onClick={handleSave} loading={saving}>保存</Button>
           <Button icon={<EyeOutlined />} onClick={async () => {
             try { const d = await dashboardService.publish(Number(id)); navigate(`/view/${d.share_token}`); }
@@ -234,10 +240,17 @@ const DashboardEditorPage: React.FC = () => {
 
           {/* 中间画布 */}
           <Canvas>
-            {charts.map(chart => (
-              <DraggableChart key={chart.id} chart={chart} dataSourceData={dataSourceData[chart.data_source_id || 0]}
-                onClick={() => setSelectedChart(chart)} onResize={handleResize} onMove={handleMove} />
-            ))}
+            {charts.map(chart => {
+              // 合并：优先使用 SQL 查询结果，其次使用数据源数据
+              const sqlData = selectedChart?.id === chart.id ? appliedSqlData[chart.id] : undefined;
+              const chartData = sqlData
+                ? { columns: sqlData.columns, rows: sqlData.rows }
+                : dataSourceData[chart.data_source_id || 0];
+              return (
+                <DraggableChart key={chart.id} chart={chart} dataSourceData={chartData}
+                  onClick={() => setSelectedChart(chart)} onResize={handleResize} onMove={handleMove} />
+              );
+            })}
             {charts.length === 0 && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>
                 <Empty description="从左侧拖拽图表到画布" />
@@ -269,14 +282,18 @@ const DashboardEditorPage: React.FC = () => {
                   {dataSources.map(ds => <Select.Option key={ds.id} value={ds.id}>{ds.name}</Select.Option>)}
                 </Select>
               </div>
-              {selectedChart.data_source_id && (
+              {selectedChart.data_source_id && (() => {
+                const dsColumns = dataSourceData[selectedChart.data_source_id]?.columns || [];
+                const sqlColumns = appliedSqlData[selectedChart.id]?.columns || [];
+                const allColumns = [...new Set([...dsColumns, ...sqlColumns])];
+                return (
                 <>
                   <div style={{ marginBottom: 12 }}>
                     <Text>X轴/分类字段</Text>
                     <Select value={JSON.parse(selectedChart.query_config || '{}').xColumn}
                       onChange={v => handleChartPropertyUpdate('query_config', JSON.stringify({ ...JSON.parse(selectedChart.query_config || '{}'), xColumn: v }))}
                       style={{ width: '100%', marginTop: 4 }} placeholder="选择字段">
-                      {(dataSourceData[selectedChart.data_source_id]?.columns || []).map((col: string) => <Select.Option key={col} value={col}>{col}</Select.Option>)}
+                      {allColumns.map((col: string) => <Select.Option key={col} value={col}>{col}</Select.Option>)}
                     </Select>
                   </div>
                   <div style={{ marginBottom: 12 }}>
@@ -284,11 +301,12 @@ const DashboardEditorPage: React.FC = () => {
                     <Select value={JSON.parse(selectedChart.query_config || '{}').yColumn}
                       onChange={v => handleChartPropertyUpdate('query_config', JSON.stringify({ ...JSON.parse(selectedChart.query_config || '{}'), yColumn: v }))}
                       style={{ width: '100%', marginTop: 4 }} placeholder="选择字段">
-                      {(dataSourceData[selectedChart.data_source_id]?.columns || []).map((col: string) => <Select.Option key={col} value={col}>{col}</Select.Option>)}
+                      {allColumns.map((col: string) => <Select.Option key={col} value={col}>{col}</Select.Option>)}
                     </Select>
                   </div>
                 </>
-              )}
+                );
+              })()}
               <Button danger block onClick={async () => {
                 try { await chartService.delete(selectedChart.id); setCharts(prev => prev.filter(c => c.id !== selectedChart.id)); setSelectedChart(null); message.success('已删除'); }
                 catch { message.error('删除失败'); }
@@ -302,6 +320,27 @@ const DashboardEditorPage: React.FC = () => {
         </div>
         </div>
       </DndContext>
+
+        {/* SQL 查询 Drawer */}
+        <Drawer
+          title="SQL 查询"
+          open={sqlDrawerOpen}
+          onClose={() => setSqlDrawerOpen(false)}
+          width={700}
+          destroyOnClose={false}
+        >
+          <SqlQueryEditor
+            onApplyToChart={(sqlResult) => {
+              if (selectedChart) {
+                setAppliedSqlData(prev => ({ ...prev, [selectedChart.id]: sqlResult }));
+                message.success(`已将查询结果应用到图表「${selectedChart.title}」`);
+              } else {
+                message.warning('请先在画布上选择一个图表');
+              }
+            }}
+          />
+        </Drawer>
+      </div>
     </div>
   );
 };
