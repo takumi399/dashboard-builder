@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Space, Typography, Spin, Select, Input, InputNumber, Empty, App, Drawer } from 'antd';
 import { SaveOutlined, EyeOutlined, ArrowLeftOutlined, BarChartOutlined, LineChartOutlined, PieChartOutlined, NumberOutlined, TableOutlined, CodeOutlined } from '@ant-design/icons';
@@ -7,6 +7,9 @@ import type { DragEndEvent } from '@dnd-kit/core';
 import { Rnd } from 'react-rnd';
 import ChartRenderer from '../components/charts/ChartRenderer';
 import SqlQueryEditor from '../components/SqlQueryEditor';
+import CollaborationIndicator from '../components/CollaborationIndicator';
+import { useWebSocket, WsMessage } from '../hooks/useWebSocket';
+import { useAuthStore } from '../store/authStore';
 import { dashboardService, chartService, dataSourceService, SQLExecuteResult } from '../services/dashboard';
 
 const { Title, Text } = Typography;
@@ -107,6 +110,67 @@ const DashboardEditorPage: React.FC = () => {
   const [sqlDrawerOpen, setSqlDrawerOpen] = useState(false);
   const [appliedSqlData, setAppliedSqlData] = useState<Record<number, SQLExecuteResult>>({});
 
+  // ── WebSocket 协作 ──
+  const token = useAuthStore((s) => s.token);
+  const { isConnected, onlineUsers, sendOperation, onMessage } = useWebSocket(id, token);
+
+  // 处理远程协作消息（Last-Write-Wins 策略）
+  const handleRemoteMessage = useCallback((msg: WsMessage) => {
+    switch (msg.type) {
+      case 'chart_moved':
+        setCharts((prev) =>
+          prev.map((c) =>
+            c.id === msg.chart_id
+              ? { ...c, position_x: msg.position_x as number, position_y: msg.position_y as number }
+              : c
+          )
+        );
+        break;
+      case 'chart_resized':
+        setCharts((prev) =>
+          prev.map((c) => {
+            if (c.id !== msg.chart_id) return c;
+            const updated = { ...c, width: msg.width as number, height: msg.height as number };
+            if (msg.position_x !== undefined) updated.position_x = msg.position_x as number;
+            if (msg.position_y !== undefined) updated.position_y = msg.position_y as number;
+            return updated;
+          })
+        );
+        break;
+      case 'chart_added':
+        setCharts((prev) => {
+          const newChart = msg.chart as ChartItem;
+          if (!newChart || prev.some((c) => c.id === newChart.id)) return prev;
+          return [...prev, newChart];
+        });
+        break;
+      case 'chart_deleted':
+        setCharts((prev) => prev.filter((c) => c.id !== msg.chart_id));
+        setSelectedChart((current) => (current?.id === msg.chart_id ? null : current));
+        break;
+      case 'chart_updated':
+        setCharts((prev) =>
+          prev.map((c) =>
+            c.id === msg.chart_id
+              ? { ...c, [msg.field as string]: msg.value }
+              : c
+          )
+        );
+        // 同步更新选中图表状态
+        setSelectedChart((current) =>
+          current?.id === msg.chart_id
+            ? { ...current, [msg.field as string]: msg.value }
+            : current
+        );
+        break;
+    }
+  }, []);
+
+  // 注册远程消息处理器
+  useEffect(() => {
+    return onMessage(handleRemoteMessage);
+  }, [onMessage, handleRemoteMessage]);
+
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   useEffect(() => {
@@ -146,18 +210,20 @@ const DashboardEditorPage: React.FC = () => {
           width: 400, height: 300,
         });
         setCharts(prev => [...prev, newChart]);
+        sendOperation({ type: 'chart_added', chart: newChart });
         message.success('图表已添加');
       } catch { message.error('添加图表失败'); }
       return;
     }
 
     // 注意: 图表拖拽/缩放现由 react-rnd 的 Rnd 组件处理, 不再走 @dnd-kit
-  }, [charts, id]);
+  }, [charts, id, sendOperation]);
 
   const handleMove = useCallback((chartId: number, x: number, y: number) => {
     setCharts(prev => prev.map(c => c.id === chartId ? { ...c, position_x: x, position_y: y } : c));
     chartService.update(chartId, { position_x: x, position_y: y }).catch(() => {});
-  }, []);
+    sendOperation({ type: 'chart_moved', chart_id: chartId, position_x: x, position_y: y });
+  }, [sendOperation]);
 
   const handleResize = useCallback((chartId: number, newW: number, newH: number, x?: number, y?: number) => {
     setCharts(prev => prev.map(c => {
@@ -171,7 +237,11 @@ const DashboardEditorPage: React.FC = () => {
     if (x !== undefined) payload.position_x = x;
     if (y !== undefined) payload.position_y = y;
     chartService.update(chartId, payload).catch(() => {});
-  }, []);
+    const op: WsMessage = { type: 'chart_resized', chart_id: chartId, width: newW, height: newH };
+    if (x !== undefined) op.position_x = x;
+    if (y !== undefined) op.position_y = y;
+    sendOperation(op);
+  }, [sendOperation]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -195,6 +265,7 @@ const DashboardEditorPage: React.FC = () => {
     setSelectedChart(updated);
     setCharts(prev => prev.map(c => c.id === updated.id ? updated : c));
     try { await chartService.update(updated.id, { [field]: value }); } catch {}
+    sendOperation({ type: 'chart_updated', chart_id: updated.id, field, value });
 
     // 切换数据源时立即加载数据
     if (field === 'data_source_id' && value) {
@@ -215,6 +286,7 @@ const DashboardEditorPage: React.FC = () => {
           <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/dashboards')}>返回</Button>
           <Title level={5} style={{ margin: 0 }}>{dashboard?.name}</Title>
         </Space>
+        <CollaborationIndicator onlineUsers={onlineUsers} isConnected={isConnected} />
         <Space>
           <Button icon={<CodeOutlined />} onClick={() => setSqlDrawerOpen(true)}>SQL 查询</Button>
           <Button icon={<SaveOutlined />} type="primary" onClick={handleSave} loading={saving}>保存</Button>
@@ -308,7 +380,7 @@ const DashboardEditorPage: React.FC = () => {
                 );
               })()}
               <Button danger block onClick={async () => {
-                try { await chartService.delete(selectedChart.id); setCharts(prev => prev.filter(c => c.id !== selectedChart.id)); setSelectedChart(null); message.success('已删除'); }
+                try { await chartService.delete(selectedChart.id); sendOperation({ type: 'chart_deleted', chart_id: selectedChart.id }); setCharts(prev => prev.filter(c => c.id !== selectedChart.id)); setSelectedChart(null); message.success('已删除'); }
                 catch { message.error('删除失败'); }
               }}>删除图表</Button>
             </>

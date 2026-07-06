@@ -45,7 +45,7 @@ async def register(data: UserRegister, db: AsyncSession = Depends(get_db)):
     await db.commit()
     await db.refresh(user)
 
-    token = create_access_token(data={"sub": str(user.id)})
+    token = create_access_token(data={"sub": str(user.id), "username": user.username})
     return TokenResponse(
         access_token=token,
         user=UserResponse(id=user.id, username=user.username, email=user.email, created_at=str(user.created_at))
@@ -59,7 +59,7 @@ async def login(data: UserLogin, db: AsyncSession = Depends(get_db)):
     if not user or not verify_password(data.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
-    token = create_access_token(data={"sub": str(user.id)})
+    token = create_access_token(data={"sub": str(user.id), "username": user.username})
     return TokenResponse(
         access_token=token,
         user=UserResponse(id=user.id, username=user.username, email=user.email, created_at=str(user.created_at))
