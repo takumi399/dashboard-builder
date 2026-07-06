@@ -477,7 +477,6 @@ const DashboardEditorPage: React.FC = () => {
           />
         )}
       </div>
-    </div>
   );
 };
 
