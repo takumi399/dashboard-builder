@@ -9,9 +9,11 @@ import ChartRenderer from '../components/charts/ChartRenderer';
 import SqlQueryEditor from '../components/SqlQueryEditor';
 import CollaborationIndicator from '../components/CollaborationIndicator';
 import EChartsConfigEditor from '../components/EChartsConfigEditor';
-import { useWebSocket, WsMessage } from '../hooks/useWebSocket';
+import { useWebSocket } from '../hooks/useWebSocket';
+import type { WsMessage } from '../hooks/useWebSocket';
 import { useAuthStore } from '../store/authStore';
-import { dashboardService, chartService, dataSourceService, SQLExecuteResult } from '../services/dashboard';
+import { dashboardService, chartService, dataSourceService } from '../services/dashboard';
+import type { SQLExecuteResult } from '../services/dashboard';
 
 const { Title, Text } = Typography;
 

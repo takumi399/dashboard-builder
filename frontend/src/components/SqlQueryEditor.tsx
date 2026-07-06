@@ -2,7 +2,8 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Select, Button, Table, Typography, Space, App, Card, Tag, Empty } from 'antd';
 import { PlayCircleOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import Editor from '@monaco-editor/react';
-import { dataSourceService, SQLExecuteResult } from '../services/dashboard';
+import { dataSourceService } from '../services/dashboard';
+import type { SQLExecuteResult } from '../services/dashboard';
 
 const { Text, Title } = Typography;
 
