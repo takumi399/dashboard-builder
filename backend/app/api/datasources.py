@@ -130,12 +130,28 @@ async def upload_csv(name: str, current_user: User = Depends(get_current_user), 
 
 
 @router.get("/{datasource_id}/data")
-async def get_datasource_data(datasource_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def get_datasource_data(
+    datasource_id: int,
+    offset: int = 0,
+    limit: int = 500,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(DataSource).where(DataSource.id == datasource_id, DataSource.user_id == current_user.id))
     ds = result.scalar_one_or_none()
     if not ds:
         raise HTTPException(status_code=404, detail="Data source not found")
-    return {"id": ds.id, "name": ds.name, "columns": json.loads(ds.config_json).get("columns", []), "rows": json.loads(ds.raw_data or "[]"), "row_count": json.loads(ds.config_json).get("row_count", 0)}
+    rows = json.loads(ds.raw_data or "[]")
+    total = len(rows)
+    paginated_rows = rows[offset:offset + limit]
+    return {
+        "id": ds.id,
+        "name": ds.name,
+        "columns": json.loads(ds.config_json).get("columns", []),
+        "rows": paginated_rows,
+        "row_count": len(paginated_rows),
+        "total": total,
+    }
 
 
 @router.post("/sql/execute", response_model=SQLExecuteResponse)

@@ -1,0 +1,59 @@
+你是 Claude Code，项目：C:\Users\Administrator\Desktop\claude\dashboard-builder
+加载 superpowers:using-superpowers skill，按清单逐项完成。
+
+Phase 2 和 Phase 3 已完成。现在 Phase 4：图表增强 & 性能优化。
+
+## Phase 4：图表增强 & 性能优化
+
+### 任务 1：新增图表类型
+
+修改 frontend/src/components/charts/ChartRenderer.tsx：
+- 在现有 bar/line/pie 基础上添加：
+  - scatter（散点图）
+  - heatmap（热力图）
+  - radar（雷达图）
+  - funnel（漏斗图）
+
+每种图表类型的 ECharts option 配置参考官方文档。
+按照 chart_type 字段 switch 分发不同的 option 生成逻辑。
+
+### 任务 2：图表类型选择器
+
+找到图表创建/编辑的 UI（可能在 DashboardEditorPage 或 ChartRenderer）：
+- chart_type 选择改为图标 + 文字的下拉/卡片选择
+- 8 种类型：柱状图、折线图、饼图、散点图、热力图、雷达图、漏斗图、数据表
+
+### 任务 3：自定义 ECharts 配置编辑器
+
+创建 frontend/src/components/EChartsConfigEditor.tsx：
+- 一个 Monaco JSON 编辑器
+- 显示当前图表的 ECharts option JSON
+- 用户可以手动编辑 JSON 覆盖默认配置
+- 保存时更新图表的 config_json 字段
+- 预览按钮：实时预览修改后的图表
+
+在图表属性面板中集成（点击图表的"高级配置"打开）。
+
+### 任务 4：大数据量性能优化
+
+修改 ChartRenderer.tsx：
+- 数据点超过 500 时：折线图使用 ECharts 的 sampling: 'lttb' 降采样
+- 数据点超过 1000 时：散点图使用 large: true 模式
+- 使用 React.memo 包裹 ChartRenderer，只在 props 变化时重渲染
+
+修改后端 datasources API：
+- GET /api/datasources/{id}/data 添加分页参数 ?offset=0&limit=500
+- 返回 total: N 总行数
+
+### 任务 5：前端杂项优化
+
+- DashboardEditorPage：图表列表使用 useMemo 避免不必要排序
+- DashboardListPage：看板列表添加分页（如果数据多）
+- 整体添加 loading 骨架屏（Ant Design Skeleton）
+
+### 任务 6：验证
+
+1. `cd backend && python -m pytest tests/ -v` 全部通过
+2. `cd frontend && npx tsc --noEmit` 无错误
+
+完成后汇报全部结果。

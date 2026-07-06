@@ -1,62 +1,87 @@
-Improve the README.md and add an architecture diagram for the dashboard-builder project at C:\Users\Administrator\Desktop\claude\task\.
+你是 Claude Code，项目：C:\Users\Administrator\Desktop\claude\dashboard-builder
+加载 superpowers:using-superpowers skill，按清单逐项完成。
 
-## PART 1: Generate Architecture Diagram
+## Phase 2：SQL 数据源
 
-Create C:\Users\Administrator\Desktop\claude\task\docs\architecture.html — a dark-themed SVG architecture diagram using the following design system:
+### 任务 1：后端 — 扩展 DataSource 模型
 
-- Background: slate-950 (#020617) with subtle 40px grid
-- Font: JetBrains Mono, loaded from Google Fonts
-- Frontend components (React, Vite, Ant Design, ECharts, dnd-kit): fill rgba(8,51,68,0.4), stroke #22d3ee (cyan)
-- Backend components (FastAPI, SQLAlchemy, JWT, Pydantic): fill rgba(6,78,59,0.4), stroke #34d399 (emerald)
-- Database (SQLite): fill rgba(76,29,149,0.4), stroke #a78bfa (violet)
-- External (Browser, GitHub): fill rgba(30,41,59,0.5), stroke #94a3b8 (slate)
+修改 backend/app/models/dashboard.py：
+- DataSource 新增字段 `connection_config` (Text, nullable, 存储 JSON 连接信息)
+- source_type 现在支持: "csv", "sql"
 
-Layers (top to bottom):
-1. Browser (React SPA) — port 3000
-2. Vite Proxy /api → port 8000
-3. FastAPI Backend — auth, dashboards, datasources, public
-4. SQLite Database
+### 任务 2：后端 — 新增 SQL 连接配置 Schema
 
-Show arrows between layers:
-- Browser → Vite Proxy → FastAPI (standard arrows, cyan)
-- FastAPI ↔ SQLite (dashed, violet)
+修改 backend/app/schemas/datasource.py：
+- 新增 `SQLConnectionConfig` schema：
+  - db_type: str (mysql / postgresql)
+  - host: str
+  - port: int
+  - database: str
+  - username: str
+  - password: str
+- 新增 `DataSourceSQLCreate` schema：
+  - name: str
+  - source_type: str = "sql"
+  - connection_config: SQLConnectionConfig
+- 新增 `SQLExecuteRequest` schema：
+  - datasource_id: int
+  - query: str
 
-Include:
-- A title "Dashboard Builder Architecture"
-- Three summary cards below the diagram:
-  - Card 1: "Frontend" — React 18, TypeScript, Vite, Ant Design 5, ECharts 5, react-rnd, Zustand
-  - Card 2: "Backend" — Python 3.11, FastAPI, SQLAlchemy 2.0 (async), JWT + bcrypt, Pydantic v2
-  - Card 3: "Infrastructure" — Docker Compose, SQLite (dev), GitHub Actions CI
+### 任务 3：后端 — SQL 执行端点
 
-The HTML should be self-contained, single file, no JS, pure SVG + CSS. Works offline in any browser.
+修改 backend/app/api/datasources.py：
+- 新增 POST /api/datasources/sql/execute 端点
+- 接收 SQLExecuteRequest
+- 根据 datasource_id 获取连接配置
+- 使用 SQLAlchemy create_engine 动态创建连接（同步即可，用 run_in_executor 或直接用同步 engine）
+- 执行 SQL 查询，返回 {"columns": [...], "rows": [...], "row_count": N}
+- SQL 注入防护：禁止 DROP/ALTER/TRUNCATE/DELETE/UPDATE/INSERT 关键字（只允许 SELECT）
+- DDL 黑名单检查不通过返回 400
 
-## PART 2: Update README.md
+### 任务 4：后端 — 新增测试
 
-Read C:\Users\Administrator\Desktop\claude\task\README.md and improve it:
+在 backend/tests/test_datasources.py 添加：
+- test_create_sql_datasource：创建 SQL 数据源（可以用 SQLite 文件数据库代替，避免依赖外部 MySQL）
+- test_sql_execute：执行 SELECT 1 等简单查询
+- test_sql_ddl_blocked：执行 DROP TABLE 应该被拦截返回 400
 
-1. Add a "Screenshots" section with placeholder comments (user will add real screenshots later):
-```markdown
-## Screenshots
-
-<!-- TODO: Add screenshots -->
-| Login | Dashboard List | Editor |
-|-------|---------------|--------|
-| ![login](screenshots/login.png) | ![list](screenshots/list.png) | ![editor](screenshots/editor.png) |
+测试用的 SQL 数据源可以指向 SQLite 文件：
+```python
+connection_config = {
+    "db_type": "sqlite",
+    "database": ":memory:"  # 或临时文件
+}
 ```
 
-2. Add a link to the architecture diagram:
-```markdown
-## Architecture
+### 任务 5：前端 — SQL 数据源创建页面
 
-[View Architecture Diagram](docs/architecture.html)
+修改 frontend/src/pages/DataSourcePage.tsx：
+- 改为 Tab 布局：Tab 1 "CSV 上传" | Tab 2 "数据库连接"
+- Tab 2 包含表单：数据库类型（Select: MySQL/PostgreSQL/SQLite）、主机、端口、数据库名、用户名、密码
+- 提交后调用 POST /api/datasources/sql（如果后端没有这个端点，用 POST /api/datasources 但带 source_type="sql"）
+
+同时修改 frontend/src/services/api.ts 添加 SQL 数据源相关 API 调用。
+
+### 任务 6：前端 — SQL 查询编辑器
+
+安装依赖：
+```bash
+cd frontend && npm install @monaco-editor/react
 ```
 
-3. Add a "Features" checkbox list showing what's implemented
-4. Add the GitHub repo URL at the top
-5. Polish the formatting
+创建 frontend/src/components/SqlQueryEditor.tsx：
+- Monaco Editor 组件，SQL 语法高亮
+- 上方：数据源下拉选择器（列出所有 source_type=sql 的数据源）
+- 中间：Monaco 编辑器（高度 200px，SQL 语言模式）
+- 下方：执行按钮 + 结果表格（Ant Design Table）
+- 查询结果可以绑定到图表（添加"应用到图表"按钮）
 
-## PART 3: Verify
+在 DataSourcePage 或 DashboardEditorPage 中集成这个组件。
 
-- Check the architecture.html file exists and has reasonable content
-- Check README.md is updated
-- Report JSON result
+### 任务 7：验证
+
+所有代码写完后：
+1. `cd backend && python -m pytest tests/ -v` 确保测试通过
+2. `cd frontend && npx tsc --noEmit` 确保 TypeScript 编译无错
+
+全部完成后告诉我结果。

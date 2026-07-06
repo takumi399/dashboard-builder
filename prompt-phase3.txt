@@ -1,0 +1,77 @@
+你是 Claude Code，项目：C:\Users\Administrator\Desktop\claude\dashboard-builder
+加载 superpowers:using-superpowers skill，按清单逐项完成。
+
+Phase 2 已完成（SQL 数据源 + Monaco 编辑器）。现在 Phase 3：实时协作编辑。
+
+## Phase 3：实时协作编辑
+
+### 任务 1：后端 — WebSocket 端点
+
+创建 backend/app/api/ws.py：
+```
+WebSocket 端点: /ws/dashboards/{dashboard_id}
+```
+
+功能：
+- 连接时验证 JWT token（通过 query param `?token=xxx`）
+- 维护一个内存字典：`{dashboard_id: set[WebSocket]}`
+- 用户加入房间：广播 `{"type": "user_joined", "user_id": ..., "username": ...}`
+- 用户离开：广播 `{"type": "user_left", "user_id": ...}`
+- 转发操作：收到操作消息 → 广播给房间内其他用户
+  - 操作类型：chart_added, chart_moved, chart_resized, chart_deleted, chart_updated
+  - 消息格式：`{"type": "chart_moved", "chart_id": ..., "position_x": ..., "position_y": ...}`
+- 使用 asyncio.Lock 保护房间字典的并发访问
+- 新用户加入时，发送当前在线用户列表
+
+更新 backend/app/main.py：
+- 导入并注册 ws router
+- 添加 WebSocket 端点
+
+### 任务 2：后端 — WebSocket 测试
+
+创建 backend/tests/test_ws.py：
+- test_websocket_connect：用 httpx 的 WebSocket 客户端连接（或直接用 websockets 库）
+- test_websocket_broadcast：两个客户端连接同一看板，一个发送操作，另一个收到广播
+- test_websocket_unauthorized：无 token 连接应被拒绝
+
+需要先 pip install websockets（如果 httpx WebSocket 不够用）
+
+### 任务 3：前端 — useWebSocket Hook
+
+创建 frontend/src/hooks/useWebSocket.ts：
+```
+参数：dashboardId, token
+返回：{ isConnected, onlineUsers, sendOperation }
+```
+
+功能：
+- 连接 ws://localhost:8000/ws/dashboards/{id}?token={token}
+- 自动重连（断开后 3 秒重试，最多 5 次）
+- 解析收到的消息，更新 onlineUsers 状态
+- onmessage 回调分发给业务层
+
+### 任务 4：前端 — 协作指示器
+
+创建 frontend/src/components/CollaborationIndicator.tsx：
+- 显示在 DashboardEditorPage 顶部
+- 显示在线人数（如 "👤 3 人在线"）
+- 显示协作光标/头像（Ant Design Avatar 小组件，不同颜色标识不同用户）
+- 从 useWebSocket hook 获取 onlineUsers
+
+### 任务 5：前端 — 集成协作到编辑器
+
+修改 frontend/src/pages/DashboardEditorPage.tsx：
+- 使用 useWebSocket hook
+- 当用户拖拽/缩放图表时：发送 chart_moved / chart_resized 操作
+- 当用户添加/删除图表时：发送 chart_added / chart_deleted 操作
+- 收到远程操作时：更新本地状态（Zustand store）
+- 添加 CollaborationIndicator 组件
+
+冲突处理策略：最后写入者胜出（Last-Write-Wins），简单但有效。
+
+### 任务 6：验证
+
+1. `cd backend && python -m pytest tests/ -v` 全部通过
+2. `cd frontend && npx tsc --noEmit` 无错误
+
+完成后汇报。

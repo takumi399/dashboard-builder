@@ -1,13 +1,14 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Button, Space, Typography, Spin, Select, Input, InputNumber, Empty, App, Drawer } from 'antd';
-import { SaveOutlined, EyeOutlined, ArrowLeftOutlined, BarChartOutlined, LineChartOutlined, PieChartOutlined, NumberOutlined, TableOutlined, CodeOutlined } from '@ant-design/icons';
+import { Button, Space, Typography, Spin, Select, Input, InputNumber, Empty, App, Drawer, Skeleton } from 'antd';
+import { SaveOutlined, EyeOutlined, ArrowLeftOutlined, BarChartOutlined, LineChartOutlined, PieChartOutlined, NumberOutlined, TableOutlined, CodeOutlined, DotChartOutlined, HeatMapOutlined, RadarChartOutlined, FunnelPlotOutlined, SettingOutlined } from '@ant-design/icons';
 import { DndContext, useDraggable, useDroppable, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { Rnd } from 'react-rnd';
 import ChartRenderer from '../components/charts/ChartRenderer';
 import SqlQueryEditor from '../components/SqlQueryEditor';
 import CollaborationIndicator from '../components/CollaborationIndicator';
+import EChartsConfigEditor from '../components/EChartsConfigEditor';
 import { useWebSocket, WsMessage } from '../hooks/useWebSocket';
 import { useAuthStore } from '../store/authStore';
 import { dashboardService, chartService, dataSourceService, SQLExecuteResult } from '../services/dashboard';
@@ -19,6 +20,18 @@ interface ChartItem {
   position_x: number; position_y: number; width: number; height: number;
   data_source_id: number | null; config_json: string; query_config: string; sort_order: number;
 }
+
+// 所有可用图表类型及其图标和标签
+const CHART_TYPES: { type: string; icon: React.ReactNode; label: string }[] = [
+  { type: 'bar', icon: <BarChartOutlined />, label: '柱状图' },
+  { type: 'line', icon: <LineChartOutlined />, label: '折线图' },
+  { type: 'pie', icon: <PieChartOutlined />, label: '饼图' },
+  { type: 'scatter', icon: <DotChartOutlined />, label: '散点图' },
+  { type: 'heatmap', icon: <HeatMapOutlined />, label: '热力图' },
+  { type: 'radar', icon: <RadarChartOutlined />, label: '雷达图' },
+  { type: 'funnel', icon: <FunnelPlotOutlined />, label: '漏斗图' },
+  { type: 'table', icon: <TableOutlined />, label: '数据表' },
+];
 
 // --- 面板项 ---
 const PaletteItem: React.FC<{ type: string; icon: React.ReactNode; label: string }> = ({ type, icon, label }) => {
@@ -109,6 +122,9 @@ const DashboardEditorPage: React.FC = () => {
   // ── SQL 查询相关状态 ──
   const [sqlDrawerOpen, setSqlDrawerOpen] = useState(false);
   const [appliedSqlData, setAppliedSqlData] = useState<Record<number, SQLExecuteResult>>({});
+
+  // ── 高级 ECharts 配置编辑器状态 ──
+  const [configEditorOpen, setConfigEditorOpen] = useState(false);
 
   // ── WebSocket 协作 ──
   const token = useAuthStore((s) => s.token);
@@ -202,10 +218,11 @@ const DashboardEditorPage: React.FC = () => {
     // 从面板拖到画布
     if (String(active.id).startsWith('palette-') && over.id === 'canvas') {
       const chartType = active.data?.current?.chartType || 'bar';
-      const names: Record<string,string> = { bar: '柱状图', line: '折线图', pie: '饼图', card: '指标卡', table: '数据表' };
+      const chartTypeEntry = CHART_TYPES.find(ct => ct.type === chartType);
+      const defaultName = chartTypeEntry?.label || '新图表';
       try {
         const newChart = await chartService.create(Number(id), {
-          chart_type: chartType, title: names[chartType] || '新图表',
+          chart_type: chartType, title: defaultName,
           position_x: 50 + charts.length * 30, position_y: 50 + charts.length * 30,
           width: 400, height: 300,
         });
@@ -276,7 +293,31 @@ const DashboardEditorPage: React.FC = () => {
     }
   };
 
-  if (loading) return <div style={{ display: 'flex', justifyContent: 'center', padding: 100 }}><Spin size="large" /></div>;
+  // ── useMemo 优化：图表列表按 sort_order 排序 ──
+  const sortedCharts = useMemo(() => {
+    return [...charts].sort((a, b) => a.sort_order - b.sort_order);
+  }, [charts]);
+
+  // ── 获取当前选中图表的实际展示数据 ──
+  const getChartData = useCallback((chart: ChartItem) => {
+    const sqlData = appliedSqlData[chart.id];
+    return sqlData
+      ? { columns: sqlData.columns, rows: sqlData.rows }
+      : dataSourceData[chart.data_source_id || 0];
+  }, [appliedSqlData, dataSourceData]);
+
+  if (loading) {
+    return (
+      <div style={{ padding: 24, height: '100vh' }}>
+        <Skeleton active paragraph={{ rows: 1 }} />
+        <div style={{ display: 'flex', gap: 16, marginTop: 24 }}>
+          <div style={{ width: 160 }}><Skeleton active paragraph={{ rows: 8 }} /></div>
+          <div style={{ flex: 1 }}><Skeleton active paragraph={{ rows: 12 }} /></div>
+          <div style={{ width: 280 }}><Skeleton active paragraph={{ rows: 6 }} /></div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
@@ -303,21 +344,16 @@ const DashboardEditorPage: React.FC = () => {
           {/* 左侧图表面板 */}
           <div style={{ width: 160, padding: 12, borderRight: '1px solid #f0f0f0', background: '#fafafa' }}>
             <Text strong style={{ display: 'block', marginBottom: 8 }}>图表类型</Text>
-            <PaletteItem type="bar" icon={<BarChartOutlined />} label="柱状图" />
-            <PaletteItem type="line" icon={<LineChartOutlined />} label="折线图" />
-            <PaletteItem type="pie" icon={<PieChartOutlined />} label="饼图" />
-            <PaletteItem type="card" icon={<NumberOutlined />} label="指标卡" />
-            <PaletteItem type="table" icon={<TableOutlined />} label="数据表" />
+            {CHART_TYPES.map(ct => (
+              <PaletteItem key={ct.type} type={ct.type} icon={ct.icon} label={ct.label} />
+            ))}
           </div>
 
           {/* 中间画布 */}
           <Canvas>
-            {charts.map(chart => {
-              // 合并：优先使用 SQL 查询结果，其次使用数据源数据
-              const sqlData = selectedChart?.id === chart.id ? appliedSqlData[chart.id] : undefined;
-              const chartData = sqlData
-                ? { columns: sqlData.columns, rows: sqlData.rows }
-                : dataSourceData[chart.data_source_id || 0];
+            {sortedCharts.map(chart => {
+              const chartData = getChartData(chart);
+              const isSelected = selectedChart?.id === chart.id;
               return (
                 <DraggableChart key={chart.id} chart={chart} dataSourceData={chartData}
                   onClick={() => setSelectedChart(chart)} onResize={handleResize} onMove={handleMove} />
@@ -379,6 +415,18 @@ const DashboardEditorPage: React.FC = () => {
                 </>
                 );
               })()}
+
+              {/* 高级配置按钮 */}
+              <div style={{ marginBottom: 12 }}>
+                <Button
+                  icon={<SettingOutlined />}
+                  block
+                  onClick={() => setConfigEditorOpen(true)}
+                >
+                  高级配置
+                </Button>
+              </div>
+
               <Button danger block onClick={async () => {
                 try { await chartService.delete(selectedChart.id); sendOperation({ type: 'chart_deleted', chart_id: selectedChart.id }); setCharts(prev => prev.filter(c => c.id !== selectedChart.id)); setSelectedChart(null); message.success('已删除'); }
                 catch { message.error('删除失败'); }
@@ -412,6 +460,22 @@ const DashboardEditorPage: React.FC = () => {
             }}
           />
         </Drawer>
+
+        {/* ECharts 高级配置编辑器 */}
+        {selectedChart && (
+          <EChartsConfigEditor
+            open={configEditorOpen}
+            onClose={() => setConfigEditorOpen(false)}
+            title={selectedChart.title}
+            chartType={selectedChart.chart_type}
+            configJson={selectedChart.config_json}
+            data={getChartData(selectedChart)}
+            queryConfig={JSON.parse(selectedChart.query_config || '{}')}
+            onSave={(newConfigJson) => {
+              handleChartPropertyUpdate('config_json', newConfigJson);
+            }}
+          />
+        )}
       </div>
     </div>
   );
