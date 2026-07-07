@@ -1,87 +1,143 @@
 你是 Claude Code，项目：C:\Users\Administrator\Desktop\claude\dashboard-builder
-加载 superpowers:using-superpowers skill，按清单逐项完成。
+加载 superpowers:using-superpowers skill，按清单完成。
 
-## Phase 2：SQL 数据源
+## 目标：添加 Docker 一键生产部署，公司内网即可使用
 
-### 任务 1：后端 — 扩展 DataSource 模型
+当前 docker-compose.yml 是开发模式（SQLite + dev server）。现在要加一个生产模式。
 
-修改 backend/app/models/dashboard.py：
-- DataSource 新增字段 `connection_config` (Text, nullable, 存储 JSON 连接信息)
-- source_type 现在支持: "csv", "sql"
+### 任务 1：后端支持 PostgreSQL
 
-### 任务 2：后端 — 新增 SQL 连接配置 Schema
+修改 backend/app/core/config.py：
+- DATABASE_URL 默认用 SQLite，但可以通过环境变量覆盖为 PostgreSQL
+- 格式：`postgresql+asyncpg://user:pass@host:5432/dbname`
+- 添加 POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_DB 等环境变量支持
 
-修改 backend/app/schemas/datasource.py：
-- 新增 `SQLConnectionConfig` schema：
-  - db_type: str (mysql / postgresql)
-  - host: str
-  - port: int
-  - database: str
-  - username: str
-  - password: str
-- 新增 `DataSourceSQLCreate` schema：
-  - name: str
-  - source_type: str = "sql"
-  - connection_config: SQLConnectionConfig
-- 新增 `SQLExecuteRequest` schema：
-  - datasource_id: int
-  - query: str
+修改 backend/requirements.txt，添加：
+```
+asyncpg==0.29.0
+```
 
-### 任务 3：后端 — SQL 执行端点
+### 任务 2：后端生产 Dockerfile
 
-修改 backend/app/api/datasources.py：
-- 新增 POST /api/datasources/sql/execute 端点
-- 接收 SQLExecuteRequest
-- 根据 datasource_id 获取连接配置
-- 使用 SQLAlchemy create_engine 动态创建连接（同步即可，用 run_in_executor 或直接用同步 engine）
-- 执行 SQL 查询，返回 {"columns": [...], "rows": [...], "row_count": N}
-- SQL 注入防护：禁止 DROP/ALTER/TRUNCATE/DELETE/UPDATE/INSERT 关键字（只允许 SELECT）
-- DDL 黑名单检查不通过返回 400
+创建 backend/Dockerfile.prod：
+```dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+EXPOSE 8000
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+```
 
-### 任务 4：后端 — 新增测试
+### 任务 3：前端生产构建 + Nginx
 
-在 backend/tests/test_datasources.py 添加：
-- test_create_sql_datasource：创建 SQL 数据源（可以用 SQLite 文件数据库代替，避免依赖外部 MySQL）
-- test_sql_execute：执行 SELECT 1 等简单查询
-- test_sql_ddl_blocked：执行 DROP TABLE 应该被拦截返回 400
-
-测试用的 SQL 数据源可以指向 SQLite 文件：
-```python
-connection_config = {
-    "db_type": "sqlite",
-    "database": ":memory:"  # 或临时文件
+创建 frontend/nginx.conf：
+```
+server {
+    listen 80;
+    server_name _;
+    
+    root /usr/share/nginx/html;
+    index index.html;
+    
+    # SPA fallback
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+    
+    # API 反向代理到后端
+    location /api/ {
+        proxy_pass http://backend:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+    
+    # WebSocket 代理
+    location /ws/ {
+        proxy_pass http://backend:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
 }
 ```
 
-### 任务 5：前端 — SQL 数据源创建页面
+创建 frontend/Dockerfile.prod（多阶段构建）：
+```dockerfile
+# 阶段1：构建
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
 
-修改 frontend/src/pages/DataSourcePage.tsx：
-- 改为 Tab 布局：Tab 1 "CSV 上传" | Tab 2 "数据库连接"
-- Tab 2 包含表单：数据库类型（Select: MySQL/PostgreSQL/SQLite）、主机、端口、数据库名、用户名、密码
-- 提交后调用 POST /api/datasources/sql（如果后端没有这个端点，用 POST /api/datasources 但带 source_type="sql"）
-
-同时修改 frontend/src/services/api.ts 添加 SQL 数据源相关 API 调用。
-
-### 任务 6：前端 — SQL 查询编辑器
-
-安装依赖：
-```bash
-cd frontend && npm install @monaco-editor/react
+# 阶段2：Nginx 托管
+FROM nginx:alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
 ```
 
-创建 frontend/src/components/SqlQueryEditor.tsx：
-- Monaco Editor 组件，SQL 语法高亮
-- 上方：数据源下拉选择器（列出所有 source_type=sql 的数据源）
-- 中间：Monaco 编辑器（高度 200px，SQL 语言模式）
-- 下方：执行按钮 + 结果表格（Ant Design Table）
-- 查询结果可以绑定到图表（添加"应用到图表"按钮）
+### 任务 4：生产 docker-compose
 
-在 DataSourcePage 或 DashboardEditorPage 中集成这个组件。
+创建 docker-compose.prod.yml：
+```yaml
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: dashboard
+      POSTGRES_PASSWORD: dashboard123
+      POSTGRES_DB: dashboard
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
 
-### 任务 7：验证
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    environment:
+      DATABASE_URL: postgresql+asyncpg://dashboard:dashboard123@db:5432/dashboard
+      SECRET_KEY: change-me-in-production
+    depends_on:
+      - db
+    restart: unless-stopped
 
-所有代码写完后：
-1. `cd backend && python -m pytest tests/ -v` 确保测试通过
-2. `cd frontend && npx tsc --noEmit` 确保 TypeScript 编译无错
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
 
-全部完成后告诉我结果。
+volumes:
+  pgdata:
+```
+
+### 任务 5：README 添加部署说明
+
+在 README.md 末尾添加：
+```
+## 生产部署
+
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+
+打开浏览器访问 http://localhost 即可使用。
+
+数据库默认密码请修改 docker-compose.prod.yml 中的 POSTGRES_PASSWORD。
+```
+
+### 任务 6：验证
+
+1. `docker compose -f docker-compose.yml -f docker-compose.prod.yml build` 能否构建成功（不需要 up，只验证 build）
+2. `cd frontend && npx tsc --noEmit` 无错误
+3. `cd backend && python -m pytest tests/ -v` 全部通过
+
+完成后汇报结果。

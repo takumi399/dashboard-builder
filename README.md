@@ -126,6 +126,14 @@ task/
 - **Model validation with Pydantic v2**: Automatic request validation and response serialization from ORM models.
 - **react-rnd for drag-and-drop**: Replaced @dnd-kit for canvas interactions. Provides native drag, resize, and absolute positioning out of the box.
 
+## 生产部署
+
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+
+打开浏览器访问 http://localhost 即可使用。
+
+数据库默认密码请修改 docker-compose.prod.yml 中的 POSTGRES_PASSWORD。
+
 ## License
 
 MIT
