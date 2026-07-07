@@ -44,7 +44,7 @@ export function useWebSocket(dashboardId: string | undefined, token: string | nu
       reconnectTimerRef.current = null;
     }
 
-    const wsUrl = `ws://localhost:8000/ws/dashboards/${dashboardId}?token=${token}`;
+    const wsUrl = `ws://${window.location.hostname}:8000/ws/dashboards/${dashboardId}?token=${token}`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
