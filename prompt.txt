@@ -1,143 +1,37 @@
 你是 Claude Code，项目：C:\Users\Administrator\Desktop\claude\dashboard-builder
-加载 superpowers:using-superpowers skill，按清单完成。
+加载 superpowers:using-superpowers skill。
 
-## 目标：添加 Docker 一键生产部署，公司内网即可使用
+## 任务 1：修复前端构建错误
 
-当前 docker-compose.yml 是开发模式（SQLite + dev server）。现在要加一个生产模式。
+运行 `cd frontend && npx tsc --noEmit` 查看错误，然后逐个修复：
 
-### 任务 1：后端支持 PostgreSQL
+### 错误列表（修复方法：删除未使用的 import）
 
-修改 backend/app/core/config.py：
-- DATABASE_URL 默认用 SQLite，但可以通过环境变量覆盖为 PostgreSQL
-- 格式：`postgresql+asyncpg://user:pass@host:5432/dbname`
-- 添加 POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_DB 等环境变量支持
+1. SqlQueryEditor.tsx:8 - `Title` 未使用 → 从 antd import 中移除 `Title`
+2. DashboardEditorPage.tsx:1 - `useRef` 未使用 → 从 react import 中移除 `useRef`
+3. DashboardEditorPage.tsx:3 - `Spin` 未使用 → 从 antd import 中移除 `Spin`
+4. DashboardEditorPage.tsx:4 - `NumberOutlined` 未使用 → 从 icons import 中移除 `NumberOutlined`
+5. DashboardEditorPage.tsx:358 - `isSelected` 未使用 → 找到这行，删除未使用的变量声明
+6. DashboardListPage.tsx:2 - `Spin` 未使用 → 从 antd import 中移除 `Spin`
+7. DataSourcePage.tsx:2 - `Modal` 未使用 → 从 antd import 中移除 `Modal`
+8. DataSourcePage.tsx:14 - `modalOpen` 未使用 → 删除 useState 声明（如果 unused）
 
-修改 backend/requirements.txt，添加：
-```
-asyncpg==0.29.0
-```
+### 错误 9：DashboardEditorPage.tsx:178 类型错误
 
-### 任务 2：后端生产 Dockerfile
+找到 line 178 附近的 setSelectedChart 调用，类型不匹配。修复方式：添加类型断言或确保返回值匹配 `ChartItem | null`。
 
-创建 backend/Dockerfile.prod：
-```dockerfile
-FROM python:3.11-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY . .
-EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+可以先用 `read_file` 查看这行上下文再修复。
+
+## 任务 2：安装 asyncpg
+
+```bash
+pip install asyncpg --proxy=http://127.0.0.1:7897
 ```
 
-### 任务 3：前端生产构建 + Nginx
+## 任务 3：验证
 
-创建 frontend/nginx.conf：
-```
-server {
-    listen 80;
-    server_name _;
-    
-    root /usr/share/nginx/html;
-    index index.html;
-    
-    # SPA fallback
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-    
-    # API 反向代理到后端
-    location /api/ {
-        proxy_pass http://backend:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-    
-    # WebSocket 代理
-    location /ws/ {
-        proxy_pass http://backend:8000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-}
-```
+修复后运行：
+- `cd frontend && npx tsc --noEmit` — 必须零错误
+- `cd backend && python -m pytest tests/ -v` — 必须 36/36 通过
 
-创建 frontend/Dockerfile.prod（多阶段构建）：
-```dockerfile
-# 阶段1：构建
-FROM node:20-alpine AS builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
-
-# 阶段2：Nginx 托管
-FROM nginx:alpine
-COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
-```
-
-### 任务 4：生产 docker-compose
-
-创建 docker-compose.prod.yml：
-```yaml
-services:
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: dashboard
-      POSTGRES_PASSWORD: dashboard123
-      POSTGRES_DB: dashboard
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    restart: unless-stopped
-
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
-    environment:
-      DATABASE_URL: postgresql+asyncpg://dashboard:dashboard123@db:5432/dashboard
-      SECRET_KEY: change-me-in-production
-    depends_on:
-      - db
-    restart: unless-stopped
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.prod
-    ports:
-      - "80:80"
-    depends_on:
-      - backend
-    restart: unless-stopped
-
-volumes:
-  pgdata:
-```
-
-### 任务 5：README 添加部署说明
-
-在 README.md 末尾添加：
-```
-## 生产部署
-
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-
-打开浏览器访问 http://localhost 即可使用。
-
-数据库默认密码请修改 docker-compose.prod.yml 中的 POSTGRES_PASSWORD。
-```
-
-### 任务 6：验证
-
-1. `docker compose -f docker-compose.yml -f docker-compose.prod.yml build` 能否构建成功（不需要 up，只验证 build）
-2. `cd frontend && npx tsc --noEmit` 无错误
-3. `cd backend && python -m pytest tests/ -v` 全部通过
-
-完成后汇报结果。
+完成后汇报。

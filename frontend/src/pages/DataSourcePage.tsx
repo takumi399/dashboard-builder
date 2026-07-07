@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Button, Table, Upload, Modal, Input, Typography, Space, Popconfirm, Tag, App, Tabs, Select, InputNumber, Form, Card } from 'antd';
+import { Button, Table, Upload, Input, Typography, Space, Popconfirm, Tag, App, Tabs, Select, InputNumber, Form, Card } from 'antd';
 import { UploadOutlined, DeleteOutlined, ArrowLeftOutlined, DatabaseOutlined, FileTextOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
@@ -11,7 +11,6 @@ const DataSourcePage: React.FC = () => {
   const { message } = App.useApp();
   const [sources, setSources] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
   const [name, setName] = useState('');
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<File | null>(null);
@@ -40,7 +39,7 @@ const DataSourcePage: React.FC = () => {
     try {
       await dataSourceService.upload(name, fileRef.current);
       message.success('上传成功');
-      setModalOpen(false); setName(''); fileRef.current = null;
+      setName(''); fileRef.current = null;
       fetchSources();
     } catch (err: any) { message.error(err.response?.data?.detail || '上传失败'); }
     finally { setUploading(false); }

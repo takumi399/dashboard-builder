@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Button, Space, Typography, Spin, Select, Input, InputNumber, Empty, App, Drawer, Skeleton } from 'antd';
-import { SaveOutlined, EyeOutlined, ArrowLeftOutlined, BarChartOutlined, LineChartOutlined, PieChartOutlined, NumberOutlined, TableOutlined, CodeOutlined, DotChartOutlined, HeatMapOutlined, RadarChartOutlined, FunnelPlotOutlined, SettingOutlined } from '@ant-design/icons';
+import { Button, Space, Typography, Select, Input, InputNumber, Empty, App, Drawer, Skeleton } from 'antd';
+import { SaveOutlined, EyeOutlined, ArrowLeftOutlined, BarChartOutlined, LineChartOutlined, PieChartOutlined, TableOutlined, CodeOutlined, DotChartOutlined, HeatMapOutlined, RadarChartOutlined, FunnelPlotOutlined, SettingOutlined } from '@ant-design/icons';
 import { DndContext, useDraggable, useDroppable, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { Rnd } from 'react-rnd';
@@ -177,7 +177,7 @@ const DashboardEditorPage: React.FC = () => {
         // 同步更新选中图表状态
         setSelectedChart((current) =>
           current?.id === msg.chart_id
-            ? { ...current, [msg.field as string]: msg.value }
+            ? ({ ...current, [msg.field as string]: msg.value } as ChartItem)
             : current
         );
         break;
@@ -355,7 +355,6 @@ const DashboardEditorPage: React.FC = () => {
           <Canvas>
             {sortedCharts.map(chart => {
               const chartData = getChartData(chart);
-              const isSelected = selectedChart?.id === chart.id;
               return (
                 <DraggableChart key={chart.id} chart={chart} dataSourceData={chartData}
                   onClick={() => setSelectedChart(chart)} onResize={handleResize} onMove={handleMove} />

@@ -5,7 +5,7 @@ import Editor from '@monaco-editor/react';
 import { dataSourceService } from '../services/dashboard';
 import type { SQLExecuteResult } from '../services/dashboard';
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 
 interface SqlDataSource {
   id: number;
