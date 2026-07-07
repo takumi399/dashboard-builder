@@ -4,12 +4,21 @@ interface Dashboard {
   id: number; name: string; description: string; is_published: boolean;
   share_token: string | null; created_at: string; updated_at: string; charts: Chart[];
   chart_count?: number;
+  role?: string;  // RBAC: "owner" | "editor" | "viewer"
 }
 
 interface Chart {
   id: number; dashboard_id: number; chart_type: string; title: string;
   position_x: number; position_y: number; width: number; height: number;
   data_source_id: number | null; config_json: string; query_config: string; sort_order: number;
+}
+
+export interface Member {
+  id: number;
+  user_id: number;
+  role: string;
+  username: string;
+  created_at: string;
 }
 
 export const dashboardService = {
@@ -19,6 +28,12 @@ export const dashboardService = {
   update: (id: number, data: { name?: string; description?: string }) => api.put<Dashboard>(`/dashboards/${id}`, data).then(r => r.data),
   delete: (id: number) => api.delete(`/dashboards/${id}`),
   publish: (id: number) => api.post<Dashboard>(`/dashboards/${id}/publish`).then(r => r.data),
+  // ── 成员管理 ──
+  listMembers: (dashboardId: number) => api.get<Member[]>(`/dashboards/${dashboardId}/members`).then(r => r.data),
+  addMember: (dashboardId: number, userId: number, role: string) =>
+    api.post<Member>(`/dashboards/${dashboardId}/members`, { user_id: userId, role }).then(r => r.data),
+  removeMember: (dashboardId: number, userId: number) =>
+    api.delete(`/dashboards/${dashboardId}/members/${userId}`),
 };
 
 export const chartService = {

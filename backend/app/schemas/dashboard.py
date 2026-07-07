@@ -70,5 +70,19 @@ class DashboardListResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     chart_count: int = 0
+    role: Optional[str] = None  # 当前用户在此看板中的角色
+
+    model_config = {"from_attributes": True}
+
+class MemberCreate(BaseModel):
+    user_id: int
+    role: str  # "editor" | "viewer"
+
+class MemberResponse(BaseModel):
+    id: int
+    user_id: int
+    role: str
+    username: str
+    created_at: datetime
 
     model_config = {"from_attributes": True}

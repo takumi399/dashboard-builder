@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Button, Space, Typography, Select, Input, InputNumber, Empty, App, Drawer, Skeleton } from 'antd';
-import { SaveOutlined, EyeOutlined, ArrowLeftOutlined, BarChartOutlined, LineChartOutlined, PieChartOutlined, TableOutlined, CodeOutlined, DotChartOutlined, HeatMapOutlined, RadarChartOutlined, FunnelPlotOutlined, SettingOutlined } from '@ant-design/icons';
+import { Button, Space, Typography, Select, Input, InputNumber, Empty, App, Drawer, Skeleton, Modal, List, Popconfirm, Tag } from 'antd';
+import { SaveOutlined, EyeOutlined, ArrowLeftOutlined, BarChartOutlined, LineChartOutlined, PieChartOutlined, TableOutlined, CodeOutlined, DotChartOutlined, HeatMapOutlined, RadarChartOutlined, FunnelPlotOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons';
 import { DndContext, useDraggable, useDroppable, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { Rnd } from 'react-rnd';
@@ -13,7 +13,7 @@ import { useWebSocket } from '../hooks/useWebSocket';
 import type { WsMessage } from '../hooks/useWebSocket';
 import { useAuthStore } from '../store/authStore';
 import { dashboardService, chartService, dataSourceService } from '../services/dashboard';
-import type { SQLExecuteResult } from '../services/dashboard';
+import type { SQLExecuteResult, Member } from '../services/dashboard';
 
 const { Title, Text } = Typography;
 
@@ -127,6 +127,14 @@ const DashboardEditorPage: React.FC = () => {
 
   // ── 高级 ECharts 配置编辑器状态 ──
   const [configEditorOpen, setConfigEditorOpen] = useState(false);
+
+  // ── 成员管理状态 ──
+  const [memberModalOpen, setMemberModalOpen] = useState(false);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [addMemberUserId, setAddMemberUserId] = useState('');
+  const [addMemberRole, setAddMemberRole] = useState<string>('editor');
+  const [addingMember, setAddingMember] = useState(false);
 
   // ── WebSocket 协作 ──
   const token = useAuthStore((s) => s.token);
@@ -300,6 +308,40 @@ const DashboardEditorPage: React.FC = () => {
     return [...charts].sort((a, b) => a.sort_order - b.sort_order);
   }, [charts]);
 
+  // ── 成员管理处理函数 ──
+  const handleOpenMembers = async () => {
+    setMemberModalOpen(true);
+    setMembersLoading(true);
+    try {
+      const data = await dashboardService.listMembers(Number(id));
+      setMembers(data);
+    } catch { message.error('加载成员列表失败'); }
+    finally { setMembersLoading(false); }
+  };
+
+  const handleAddMember = async () => {
+    const userId = parseInt(addMemberUserId, 10);
+    if (!userId) { message.warning('请输入用户 ID'); return; }
+    setAddingMember(true);
+    try {
+      await dashboardService.addMember(Number(id), userId, addMemberRole);
+      message.success('成员添加成功');
+      setAddMemberUserId('');
+      // 刷新成员列表
+      const data = await dashboardService.listMembers(Number(id));
+      setMembers(data);
+    } catch { message.error('添加成员失败'); }
+    finally { setAddingMember(false); }
+  };
+
+  const handleRemoveMember = async (userId: number) => {
+    try {
+      await dashboardService.removeMember(Number(id), userId);
+      message.success('成员已移除');
+      setMembers(prev => prev.filter(m => m.user_id !== userId));
+    } catch { message.error('移除成员失败'); }
+  };
+
   // ── 获取当前选中图表的实际展示数据 ──
   const getChartData = useCallback((chart: ChartItem) => {
     const sqlData = appliedSqlData[chart.id];
@@ -331,6 +373,7 @@ const DashboardEditorPage: React.FC = () => {
         </Space>
         <CollaborationIndicator onlineUsers={onlineUsers} isConnected={isConnected} />
         <Space>
+          <Button icon={<TeamOutlined />} onClick={handleOpenMembers}>成员管理</Button>
           <Button icon={<CodeOutlined />} onClick={() => setSqlDrawerOpen(true)}>SQL 查询</Button>
           <Button icon={<SaveOutlined />} type="primary" onClick={handleSave} loading={saving}>保存</Button>
           <Button icon={<EyeOutlined />} onClick={async () => {
@@ -477,6 +520,68 @@ const DashboardEditorPage: React.FC = () => {
             }}
           />
         )}
+
+        {/* ── 成员管理 Modal ── */}
+        <Modal
+          title="成员管理"
+          open={memberModalOpen}
+          onCancel={() => setMemberModalOpen(false)}
+          footer={null}
+          width={500}
+        >
+          {/* 添加成员 */}
+          <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
+            <Input
+              placeholder="用户 ID"
+              value={addMemberUserId}
+              onChange={e => setAddMemberUserId(e.target.value)}
+              style={{ width: 120 }}
+            />
+            <Select value={addMemberRole} onChange={setAddMemberRole} style={{ width: 100 }}>
+              <Select.Option value="editor">编辑者</Select.Option>
+              <Select.Option value="viewer">查看者</Select.Option>
+            </Select>
+            <Button type="primary" loading={addingMember} onClick={handleAddMember}>
+              添加
+            </Button>
+          </div>
+
+          {/* 成员列表 */}
+          <List
+            loading={membersLoading}
+            dataSource={members}
+            renderItem={(member: Member) => (
+              <List.Item
+                actions={
+                  member.role !== 'owner'
+                    ? [
+                        <Popconfirm
+                          key="remove"
+                          title="确定移除此成员？"
+                          onConfirm={() => handleRemoveMember(member.user_id)}
+                        >
+                          <Button size="small" danger>移除</Button>
+                        </Popconfirm>,
+                      ]
+                    : []
+                }
+              >
+                <List.Item.Meta
+                  title={
+                    <Space>
+                      {member.username}
+                      <Tag color={member.role === 'owner' ? 'blue' : member.role === 'editor' ? 'green' : 'default'}>
+                        {member.role === 'owner' ? '拥有者' : member.role === 'editor' ? '编辑者' : '查看者'}
+                      </Tag>
+                    </Space>
+                  }
+                  description={`用户 ID: ${member.user_id}`}
+                />
+              </List.Item>
+            )}
+            locale={{ emptyText: '暂无成员' }}
+          />
+        </Modal>
       </div>
   );
 };

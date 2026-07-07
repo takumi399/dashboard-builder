@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Float, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Float, ForeignKey, UniqueConstraint
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -51,3 +51,19 @@ class DataSource(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     owner = relationship("User", backref="data_sources")
+
+class DashboardMember(Base):
+    __tablename__ = "dashboard_members"
+
+    id = Column(Integer, primary_key=True, index=True)
+    dashboard_id = Column(Integer, ForeignKey("dashboards.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    role = Column(String(20), nullable=False, default="viewer")  # "owner" | "editor" | "viewer"
+    created_at = Column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("dashboard_id", "user_id", name="uq_dashboard_member"),
+    )
+
+    dashboard = relationship("Dashboard", backref="members")
+    user = relationship("User", backref="dashboard_memberships")

@@ -128,7 +128,7 @@ async def websocket_endpoint(websocket: WebSocket, dashboard_id: int):
         await websocket.close(code=4001, reason="Invalid token payload")
         return
 
-    # ── 建立连接 ──
+    # ── 建立连接（JWT 已验证，HTTP API 层负责数据权限）──
     await websocket.accept()
     await manager.join(dashboard_id, websocket, user_id, username)
 

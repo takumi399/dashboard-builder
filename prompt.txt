@@ -1,37 +1,23 @@
 你是 Claude Code，项目：C:\Users\Administrator\Desktop\claude\dashboard-builder
 加载 superpowers:using-superpowers skill。
 
-## 任务 1：修复前端构建错误
+## 当前状态
+- Phase 5 权限系统已完成 90%（permissions.py, monitor.py, RBAC 模型, API 权限检查）
+- 42/45 测试通过
+- 3 个 WebSocket 测试失败：test_websocket_broadcast_join_leave, test_websocket_broadcast_operation, test_websocket_multiple_operation_types
 
-运行 `cd frontend && npx tsc --noEmit` 查看错误，然后逐个修复：
+## 问题原因
+WS 端点现在检查用户是否有权限访问看板。测试中 WebSocket 连接的看板不属于测试用户。
 
-### 错误列表（修复方法：删除未使用的 import）
+## 修复方案
+修改 backend/tests/test_ws.py：
+- 在需要权限的测试中，先用 auth_headers 创建一个测试看板
+- WebSocket 连接到该看板的 dashboard_id
+- 确保 token 对应的用户是该看板的 owner
 
-1. SqlQueryEditor.tsx:8 - `Title` 未使用 → 从 antd import 中移除 `Title`
-2. DashboardEditorPage.tsx:1 - `useRef` 未使用 → 从 react import 中移除 `useRef`
-3. DashboardEditorPage.tsx:3 - `Spin` 未使用 → 从 antd import 中移除 `Spin`
-4. DashboardEditorPage.tsx:4 - `NumberOutlined` 未使用 → 从 icons import 中移除 `NumberOutlined`
-5. DashboardEditorPage.tsx:358 - `isSelected` 未使用 → 找到这行，删除未使用的变量声明
-6. DashboardListPage.tsx:2 - `Spin` 未使用 → 从 antd import 中移除 `Spin`
-7. DataSourcePage.tsx:2 - `Modal` 未使用 → 从 antd import 中移除 `Modal`
-8. DataSourcePage.tsx:14 - `modalOpen` 未使用 → 删除 useState 声明（如果 unused）
+先 `read_file` 查看 test_ws.py 的当前内容，理解测试结构后再修复。
 
-### 错误 9：DashboardEditorPage.tsx:178 类型错误
-
-找到 line 178 附近的 setSelectedChart 调用，类型不匹配。修复方式：添加类型断言或确保返回值匹配 `ChartItem | null`。
-
-可以先用 `read_file` 查看这行上下文再修复。
-
-## 任务 2：安装 asyncpg
-
-```bash
-pip install asyncpg --proxy=http://127.0.0.1:7897
-```
-
-## 任务 3：验证
-
-修复后运行：
-- `cd frontend && npx tsc --noEmit` — 必须零错误
-- `cd backend && python -m pytest tests/ -v` — 必须 36/36 通过
+## 验证
+`cd backend && python -m pytest tests/ -v` → 全部通过
 
 完成后汇报。

@@ -12,7 +12,14 @@ const PAGE_SIZE = 9;
 interface Dashboard {
   id: number; name: string; description: string; is_published: boolean;
   share_token: string | null; created_at: string; updated_at: string; chart_count?: number;
+  role?: string;  // RBAC
 }
+
+const ROLE_LABELS: Record<string, { color: string; text: string }> = {
+  owner: { color: 'blue', text: '拥有者' },
+  editor: { color: 'green', text: '编辑者' },
+  viewer: { color: 'default', text: '查看者' },
+};
 
 const DashboardListPage: React.FC = () => {
   const { message } = App.useApp();
@@ -105,7 +112,15 @@ const DashboardListPage: React.FC = () => {
                   ]}
                 >
                   <Card.Meta
-                    title={<Space>{d.name}{d.is_published && <Tag color="green">已发布</Tag>}</Space>}
+                    title={
+                      <Space>
+                        {d.name}
+                        {d.is_published && <Tag color="green">已发布</Tag>}
+                        {d.role && ROLE_LABELS[d.role] && (
+                          <Tag color={ROLE_LABELS[d.role].color}>{ROLE_LABELS[d.role].text}</Tag>
+                        )}
+                      </Space>
+                    }
                     description={
                       <div>
                         <Text type="secondary">{d.description || '暂无描述'}</Text>
