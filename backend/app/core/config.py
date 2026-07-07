@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "dev-secret-key-change-in-production"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    ENABLE_RATE_LIMIT: bool = True
 
     # PostgreSQL convenience environment variables
     # If POSTGRES_HOST is set, these are used to build DATABASE_URL

@@ -6,9 +6,24 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base, get_db
+from app.core.config import settings
 from app.main import app
 
-# 使用 SQLite 内存数据库，不影响开发数据库
+# 测试环境关闭限流
+settings.ENABLE_RATE_LIMIT = False
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def reset_rate_limiter():
+    """每个测试前清空限流器状态。"""
+    from app.main import app as _app
+    try:
+        _app.state.limiter.reset()
+    except Exception:
+        pass
+    yield
+
+
 TEST_DATABASE_URL = "sqlite+aiosqlite://"
 
 
@@ -71,7 +86,6 @@ async def async_client(test_engine):
 @pytest_asyncio.fixture
 async def auth_headers(async_client):
     """注册测试用户、登录获取 JWT token，返回带 Authorization header 的 dict。"""
-    # 注册
     response = await async_client.post("/api/auth/register", json={
         "username": "testuser",
         "email": "test@example.com",

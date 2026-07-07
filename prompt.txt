@@ -1,23 +1,81 @@
 你是 Claude Code，项目：C:\Users\Administrator\Desktop\claude\dashboard-builder
-加载 superpowers:using-superpowers skill。
+加载 superpowers:using-superpowers skill，按清单完成。
 
-## 当前状态
-- Phase 5 权限系统已完成 90%（permissions.py, monitor.py, RBAC 模型, API 权限检查）
-- 42/45 测试通过
-- 3 个 WebSocket 测试失败：test_websocket_broadcast_join_leave, test_websocket_broadcast_operation, test_websocket_multiple_operation_types
+## Phase 6：限流 + 结构化日志 + 数据库备份
 
-## 问题原因
-WS 端点现在检查用户是否有权限访问看板。测试中 WebSocket 连接的看板不属于测试用户。
+### 任务 1：API 限流
 
-## 修复方案
-修改 backend/tests/test_ws.py：
-- 在需要权限的测试中，先用 auth_headers 创建一个测试看板
-- WebSocket 连接到该看板的 dashboard_id
-- 确保 token 对应的用户是该看板的 owner
+安装 slowapi：
+```bash
+pip install slowapi --proxy=http://127.0.0.1:7897
+```
 
-先 `read_file` 查看 test_ws.py 的当前内容，理解测试结构后再修复。
+修改 backend/app/main.py：
+- 从 slowapi 导入 Limiter 和 _rate_limit_exceeded_handler
+- 创建 limiter = Limiter(key_func=get_remote_address)
+- app.state.limiter = limiter
+- app.add_exception_handler(429, _rate_limit_exceeded_handler)
+- 在 include_router 之后添加 limiter 中间件
 
-## 验证
-`cd backend && python -m pytest tests/ -v` → 全部通过
+修改 backend/app/api/auth.py：
+- 注册和登录端点加限流：`@limiter.limit("5/minute")`
+- 防止暴力破解
 
-完成后汇报。
+修改 backend/app/api/dashboards.py 和 datasources.py：
+- 列表/创建端点加限流
+
+### 任务 2：结构化日志
+
+安装 structlog（或用 Python 内置 logging）：
+```bash
+pip install structlog --proxy=http://127.0.0.1:7897
+```
+
+创建 backend/app/core/logging.py：
+- 使用 structlog 配置 JSON 格式日志
+- 记录时间戳、级别、模块名、消息
+- 请求中间件记录 method、path、status_code、耗时（毫秒）
+
+修改 backend/app/main.py：
+- 添加日志中间件（用 @app.middleware("http")）
+- 启动时打印 "服务启动" 日志
+
+### 任务 3：数据库自动备份
+
+创建 backend/app/core/backup.py：
+- backup_database() 函数：用 pg_dump 导出 SQL 到 backup/ 目录
+- 文件名带时间戳：backup_20260101_120000.sql
+- 返回备份文件路径
+
+创建备份 API（在 monitor.py 加一个端点）：
+- POST /api/admin/backup：手动触发备份（需认证）
+- GET /api/admin/backups：列出历史备份文件
+
+创建 scripts/backup.sh：
+```bash
+#!/bin/bash
+# 定时备份脚本，配合 cron 使用
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_DIR="./backups"
+mkdir -p $BACKUP_DIR
+pg_dump $DATABASE_URL > "$BACKUP_DIR/backup_$TIMESTAMP.sql"
+# 保留最近 7 天的备份
+find $BACKUP_DIR -name "*.sql" -mtime +7 -delete
+```
+
+同时在 requirements.txt 添加 structlog 和 slowapi。
+
+### 任务 4：测试
+
+在 tests/ 添加 test_rate_limit.py：
+- test_register_rate_limit：连续注册 6 次，第 6 次返回 429
+
+在 tests/ 添加 test_logging.py（简单）：
+- test_stats_endpoint：GET /api/stats 返回 200 并包含 users/dashboards/charts
+
+### 任务 5：验证
+
+1. `cd backend && python -m pytest tests/ -v` → 全部通过
+2. `cd frontend && npx tsc --noEmit` → 零错误
+
+完成后汇报全部结果。

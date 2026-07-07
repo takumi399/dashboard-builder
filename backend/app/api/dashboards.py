@@ -1,9 +1,10 @@
 import secrets
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import selectinload
 from app.core.database import get_db
+from app.core.limiter import limiter
 from app.core.permissions import get_dashboard_role, require_role
 from app.api.auth import get_current_user
 from app.models.user import User
@@ -22,7 +23,9 @@ router = APIRouter()
 # ═══════════════════════════════════════════
 
 @router.get("", response_model=list[DashboardListResponse])
+@limiter.limit("30/minute")
 async def list_dashboards(
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -86,7 +89,9 @@ async def list_dashboards(
 
 
 @router.post("", response_model=DashboardResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/minute")
 async def create_dashboard(
+    request: Request,
     data: DashboardCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

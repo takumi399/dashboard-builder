@@ -1,8 +1,9 @@
 import json, csv, io, re, asyncio
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text as sa_text
 from app.core.database import get_db
+from app.core.limiter import limiter
 from app.api.auth import get_current_user
 from app.models.user import User
 from app.models.dashboard import DataSource
@@ -78,17 +79,17 @@ def _execute_sql_sync(connection_url: str, query: str) -> dict:
         engine.dispose()
 
 
-router = APIRouter()
-
-
 @router.get("", response_model=list[DataSourceResponse])
-async def list_datasources(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@limiter.limit("30/minute")
+async def list_datasources(request: Request, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(DataSource).where(DataSource.user_id == current_user.id).order_by(DataSource.created_at.desc()))
     return [DataSourceResponse.model_validate(ds) for ds in result.scalars().all()]
 
 
 @router.post("", response_model=DataSourceResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/minute")
 async def create_datasource(
+    request: Request,
     body: DataSourceCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
