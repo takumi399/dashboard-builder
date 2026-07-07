@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel as PydanticBaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.database import get_db
-from app.core.security import verify_password, get_password_hash, create_access_token, decode_access_token
+from app.core.security import verify_password, get_password_hash, create_access_token, create_refresh_token, decode_access_token
 from app.core.limiter import limiter
 from app.models.user import User
 from app.schemas.auth import UserRegister, UserLogin, UserResponse, TokenResponse
@@ -48,8 +49,10 @@ async def register(request: Request, data: UserRegister, db: AsyncSession = Depe
     await db.refresh(user)
 
     token = create_access_token(data={"sub": str(user.id), "username": user.username})
+    refresh_token = create_refresh_token(data={"sub": str(user.id), "username": user.username})
     return TokenResponse(
         access_token=token,
+        refresh_token=refresh_token,
         user=UserResponse(id=user.id, username=user.username, email=user.email, created_at=str(user.created_at))
     )
 
@@ -63,8 +66,10 @@ async def login(request: Request, data: UserLogin, db: AsyncSession = Depends(ge
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
     token = create_access_token(data={"sub": str(user.id), "username": user.username})
+    refresh_token = create_refresh_token(data={"sub": str(user.id), "username": user.username})
     return TokenResponse(
         access_token=token,
+        refresh_token=refresh_token,
         user=UserResponse(id=user.id, username=user.username, email=user.email, created_at=str(user.created_at))
     )
 
@@ -75,4 +80,35 @@ async def get_me(current_user: User = Depends(get_current_user)):
         username=current_user.username,
         email=current_user.email,
         created_at=str(current_user.created_at)
+    )
+
+
+class RefreshRequest(PydanticBaseModel):
+    refresh_token: str
+
+
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh_token_endpoint(data: RefreshRequest, db: AsyncSession = Depends(get_db)):
+    """用 refresh_token 换取新的 access_token。"""
+    payload = decode_access_token(data.refresh_token)
+    if payload is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+    if payload.get("type") != "refresh":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
+
+    user_id = payload.get("sub")
+    if user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    result = await db.execute(select(User).where(User.id == int(user_id)))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    new_access = create_access_token(data={"sub": str(user.id), "username": user.username})
+    new_refresh = create_refresh_token(data={"sub": str(user.id), "username": user.username})
+    return TokenResponse(
+        access_token=new_access,
+        refresh_token=new_refresh,
+        user=UserResponse(id=user.id, username=user.username, email=user.email, created_at=str(user.created_at))
     )

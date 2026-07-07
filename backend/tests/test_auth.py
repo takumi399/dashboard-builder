@@ -49,13 +49,13 @@ async def test_login_success(async_client):
     await async_client.post("/api/auth/register", json={
         "username": "loginuser",
         "email": "login@example.com",
-        "password": "mypassword",
+        "password": "mypassword1",
     })
 
     # 登录
     response = await async_client.post("/api/auth/login", json={
         "email": "login@example.com",
-        "password": "mypassword",
+        "password": "mypassword1",
     })
     assert response.status_code == 200, f"登录失败: {response.text}"
     data = response.json()

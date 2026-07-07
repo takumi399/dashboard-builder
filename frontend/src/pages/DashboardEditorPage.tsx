@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Space, Typography, Select, Input, InputNumber, Empty, App, Drawer, Skeleton, Modal, List, Popconfirm, Tag } from 'antd';
 import { SaveOutlined, EyeOutlined, ArrowLeftOutlined, BarChartOutlined, LineChartOutlined, PieChartOutlined, TableOutlined, CodeOutlined, DotChartOutlined, HeatMapOutlined, RadarChartOutlined, FunnelPlotOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons';
+import DOMPurify from 'dompurify';
 import { DndContext, useDraggable, useDroppable, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { Rnd } from 'react-rnd';
@@ -369,7 +370,7 @@ const DashboardEditorPage: React.FC = () => {
       <div style={{ padding: '8px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff' }}>
         <Space>
           <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/dashboards')}>返回</Button>
-          <Title level={5} style={{ margin: 0 }}>{dashboard?.name}</Title>
+          <Title level={5} style={{ margin: 0 }}>{DOMPurify.sanitize(dashboard?.name || '')}</Title>
         </Space>
         <CollaborationIndicator onlineUsers={onlineUsers} isConnected={isConnected} />
         <Space>
@@ -569,7 +570,7 @@ const DashboardEditorPage: React.FC = () => {
                 <List.Item.Meta
                   title={
                     <Space>
-                      {member.username}
+                      {DOMPurify.sanitize(member.username)}
                       <Tag color={member.role === 'owner' ? 'blue' : member.role === 'editor' ? 'green' : 'default'}>
                         {member.role === 'owner' ? '拥有者' : member.role === 'editor' ? '编辑者' : '查看者'}
                       </Tag>

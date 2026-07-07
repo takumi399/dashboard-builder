@@ -1,10 +1,22 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List
 from datetime import datetime
+
+from app.core.security import contains_html
+
 
 class ChartCreate(BaseModel):
     chart_type: str
     title: str = "Untitled Chart"
+
+    @field_validator('title')
+    @classmethod
+    def validate_title_no_xss(cls, v: str) -> str:
+        if len(v) > 100:
+            raise ValueError('图表标题不能超过 100 个字符')
+        if contains_html(v):
+            raise ValueError('图表标题不能包含 HTML 标签')
+        return v
     position_x: float = 0
     position_y: float = 0
     width: float = 400
@@ -45,6 +57,15 @@ class ChartResponse(BaseModel):
 class DashboardCreate(BaseModel):
     name: str
     description: str = ""
+
+    @field_validator('name')
+    @classmethod
+    def validate_name_no_xss(cls, v: str) -> str:
+        if len(v) > 100:
+            raise ValueError('看板名称不能超过 100 个字符')
+        if contains_html(v):
+            raise ValueError('看板名称不能包含 HTML 标签')
+        return v
 
 class DashboardUpdate(BaseModel):
     name: Optional[str] = None

@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import JWTError, jwt
@@ -24,3 +25,20 @@ def decode_access_token(token: str) -> Optional[dict]:
         return payload
     except JWTError:
         return None
+
+
+def create_refresh_token(data: dict) -> str:
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    to_encode.update({"exp": expire, "type": "refresh"})
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def sanitize_text(value: str) -> str:
+    """移除 HTML 标签，防止 XSS。"""
+    return re.sub(r'<[^>]*>', '', value)
+
+
+def contains_html(value: str) -> bool:
+    """检查是否包含 HTML 标签。"""
+    return bool(re.search(r'<[^>]*>', value))

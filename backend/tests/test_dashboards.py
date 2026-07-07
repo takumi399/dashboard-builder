@@ -93,7 +93,7 @@ async def test_cannot_access_others_dashboard(async_client):
     """用户 A 不能访问用户 B 的看板。"""
     # 注册用户 A
     r_a = await async_client.post("/api/auth/register", json={
-        "username": "user_a", "email": "a@example.com", "password": "pass_a"
+        "username": "user_a", "email": "a@example.com", "password": "pass123a"
     })
     token_a = r_a.json()["access_token"]
     headers_a = {"Authorization": f"Bearer {token_a}"}
@@ -106,7 +106,7 @@ async def test_cannot_access_others_dashboard(async_client):
 
     # 注册用户 B
     r_b = await async_client.post("/api/auth/register", json={
-        "username": "user_b", "email": "b@example.com", "password": "pass_b"
+        "username": "user_b", "email": "b@example.com", "password": "pass123b"
     })
     token_b = r_b.json()["access_token"]
     headers_b = {"Authorization": f"Bearer {token_b}"}

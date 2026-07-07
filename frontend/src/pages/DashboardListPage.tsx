@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { Button, Card, Row, Col, Modal, Input, Typography, Empty, Space, Tag, Popconfirm, App, Pagination, Skeleton } from 'antd';
 import { PlusOutlined, DeleteOutlined, EyeOutlined, LogoutOutlined, DatabaseOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
+import DOMPurify from 'dompurify';
 import { useAuthStore } from '../store/authStore';
 import { dashboardService } from '../services/dashboard';
 
@@ -79,7 +80,7 @@ const DashboardListPage: React.FC = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <Title level={3} style={{ margin: 0 }}>我的看板</Title>
         <Space>
-          <Text>欢迎，{user?.username}</Text>
+          <Text>欢迎，{DOMPurify.sanitize(user?.username || '')}</Text>
           <Button icon={<DatabaseOutlined />} onClick={() => navigate('/datasources')}>数据源</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>新建看板</Button>
           <Button icon={<LogoutOutlined />} onClick={() => { logout(); navigate('/login'); }}>退出登录</Button>
@@ -114,7 +115,7 @@ const DashboardListPage: React.FC = () => {
                   <Card.Meta
                     title={
                       <Space>
-                        {d.name}
+                        {DOMPurify.sanitize(d.name)}
                         {d.is_published && <Tag color="green">已发布</Tag>}
                         {d.role && ROLE_LABELS[d.role] && (
                           <Tag color={ROLE_LABELS[d.role].color}>{ROLE_LABELS[d.role].text}</Tag>
