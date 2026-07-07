@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from typing import Optional, List
 from datetime import datetime
 
@@ -58,14 +58,14 @@ class DashboardCreate(BaseModel):
     name: str
     description: str = ""
 
-    @field_validator('name')
-    @classmethod
-    def validate_name_no_xss(cls, v: str) -> str:
+    @model_validator(mode='after')
+    def validate_name_no_xss(self):
+        v = self.name
         if len(v) > 100:
             raise ValueError('看板名称不能超过 100 个字符')
         if contains_html(v):
             raise ValueError('看板名称不能包含 HTML 标签')
-        return v
+        return self
 
 class DashboardUpdate(BaseModel):
     name: Optional[str] = None

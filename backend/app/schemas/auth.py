@@ -1,5 +1,5 @@
 import re
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, model_validator
 from app.core.security import contains_html
 
 
@@ -24,16 +24,16 @@ class UserRegister(BaseModel):
             raise ValueError('邮箱不能包含 HTML 标签')
         return v
 
-    @field_validator('password')
-    @classmethod
-    def validate_password_strength(cls, v: str) -> str:
+    @model_validator(mode='after')
+    def validate_password_strength(self):
+        v = self.password
         if len(v) < 8:
             raise ValueError('密码至少需要 8 个字符')
         if not re.search(r'[a-zA-Z]', v):
             raise ValueError('密码必须包含字母')
         if not re.search(r'[0-9]', v):
             raise ValueError('密码必须包含数字')
-        return v
+        return self
 
 
 class UserLogin(BaseModel):

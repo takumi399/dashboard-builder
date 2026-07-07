@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Typography, Spin } from 'antd';
-import DOMPurify from 'dompurify';
 import ChartRenderer from '../components/charts/ChartRenderer';
 import { publicService, dataSourceService } from '../services/dashboard';
 
