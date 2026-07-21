@@ -1,6 +1,7 @@
 """pytest 全局配置：测试数据库、HTTP 客户端、认证 fixture。"""
 
 import pytest_asyncio
+from cryptography.fernet import Fernet
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.pool import StaticPool
@@ -11,6 +12,7 @@ from app.main import app
 
 # 测试环境关闭限流
 settings.ENABLE_RATE_LIMIT = False
+settings.DATASOURCE_ENCRYPTION_KEY = Fernet.generate_key().decode()
 
 
 @pytest_asyncio.fixture(autouse=True)

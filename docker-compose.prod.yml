@@ -16,6 +16,8 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://dashboard:dashboard123@db:5432/dashboard
       SECRET_KEY: change-me-in-production
+      DATASOURCE_ENCRYPTION_KEY: ${DATASOURCE_ENCRYPTION_KEY:?set DATASOURCE_ENCRYPTION_KEY}
+      SQL_ALLOWED_HOSTS: ${SQL_ALLOWED_HOSTS:-db}
     depends_on:
       - db
     restart: unless-stopped
