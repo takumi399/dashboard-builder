@@ -44,12 +44,29 @@ export const chartService = {
 };
 
 export interface SQLConnectionConfig {
-  db_type: string;   // "mysql" | "postgresql" | "sqlite"
+  db_type: 'sqlite' | 'mysql' | 'postgresql';
   host?: string;
   port?: number;
-  database?: string;
+  database: string;
   username?: string;
   password?: string;
+}
+
+export interface PublicSQLConnectionConfig {
+  db_type: 'sqlite' | 'mysql' | 'postgresql';
+  host?: string;
+  port?: number;
+  database: string;
+  username?: string;
+}
+
+export interface DataSource {
+  id: number;
+  name: string;
+  source_type: 'csv' | 'sql';
+  config_json: string;
+  created_at: string;
+  connection?: PublicSQLConnectionConfig | null;
 }
 
 export interface SQLExecuteResult {
@@ -59,9 +76,9 @@ export interface SQLExecuteResult {
 }
 
 export const dataSourceService = {
-  list: () => api.get<any[]>('/datasources').then(r => r.data),
-  create: (data: { name: string; source_type: string; connection_config?: string; config_json?: string; raw_data?: string }) =>
-    api.post<any>('/datasources', data).then(r => r.data),
+  list: () => api.get<DataSource[]>('/datasources').then(r => r.data),
+  create: (data: { name: string; source_type: 'csv' | 'sql'; connection_config?: SQLConnectionConfig; config_json?: string; raw_data?: string }) =>
+    api.post<DataSource>('/datasources', data).then(r => r.data),
   upload: (name: string, file: File) => { const fd = new FormData(); fd.append('file', file); return api.post(`/datasources/upload?name=${encodeURIComponent(name)}`, fd).then(r => r.data); },
   getData: (id: number) => api.get<any>(`/datasources/${id}/data`).then(r => r.data),
   executeSql: (datasourceId: number, query: string) =>

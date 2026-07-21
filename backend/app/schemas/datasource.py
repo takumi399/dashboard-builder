@@ -4,11 +4,11 @@ from datetime import datetime
 
 
 class DataSourceCreate(BaseModel):
-    name: str
-    source_type: str  # "csv" | "sql"
+    name: str = Field(min_length=1, max_length=100)
+    source_type: Literal["csv", "sql"]
     raw_data: Optional[str] = None
     config_json: str = "{}"
-    connection_config: Optional[str] = None  # JSON string for SQL connections
+    connection_config: Optional["SQLConnectionConfig"] = None
 
 
 class DataSourceResponse(BaseModel):
@@ -16,9 +16,8 @@ class DataSourceResponse(BaseModel):
     name: str
     source_type: str
     config_json: str
-    raw_data: Optional[str]
-    connection_config: Optional[str] = None
     created_at: datetime
+    connection: Optional["PublicSQLConnectionConfig"] = None
 
     model_config = {"from_attributes": True}
 
@@ -26,18 +25,20 @@ class DataSourceResponse(BaseModel):
 # ── SQL 数据源 schemas ──
 
 class SQLConnectionConfig(BaseModel):
-    db_type: str  # "mysql" | "postgresql" | "sqlite"
+    db_type: Literal["sqlite", "mysql", "postgresql"]
     host: Optional[str] = None
-    port: Optional[int] = None
-    database: Optional[str] = None
+    port: Optional[int] = Field(default=None, ge=1, le=65535)
+    database: str
     username: Optional[str] = None
-    password: Optional[str] = None
+    password: Optional[str] = Field(default=None, repr=False)
 
 
-class DataSourceSQLCreate(BaseModel):
-    name: str
-    source_type: Literal["sql"] = "sql"
-    connection_config: SQLConnectionConfig
+class PublicSQLConnectionConfig(BaseModel):
+    db_type: Literal["sqlite", "mysql", "postgresql"]
+    host: Optional[str] = None
+    port: Optional[int] = Field(default=None, ge=1, le=65535)
+    database: str
+    username: Optional[str] = None
 
 
 class SQLExecuteRequest(BaseModel):

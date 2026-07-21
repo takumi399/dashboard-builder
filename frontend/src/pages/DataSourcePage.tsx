@@ -4,12 +4,13 @@ import { UploadOutlined, DeleteOutlined, ArrowLeftOutlined, DatabaseOutlined, Fi
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { dataSourceService } from '../services/dashboard';
+import type { DataSource } from '../services/dashboard';
 
 const { Title } = Typography;
 
 const DataSourcePage: React.FC = () => {
   const { message } = App.useApp();
-  const [sources, setSources] = useState<any[]>([]);
+  const [sources, setSources] = useState<DataSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -60,7 +61,7 @@ const DataSourcePage: React.FC = () => {
       await dataSourceService.create({
         name: values.name,
         source_type: 'sql',
-        connection_config: JSON.stringify(connectionConfig),
+        connection_config: connectionConfig,
       });
       message.success('数据库连接已添加');
       sqlForm.resetFields();

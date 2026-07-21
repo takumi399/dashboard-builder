@@ -4,14 +4,9 @@ import { PlayCircleOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import Editor from '@monaco-editor/react';
 import { dataSourceService } from '../services/dashboard';
 import type { SQLExecuteResult } from '../services/dashboard';
+import type { DataSource } from '../services/dashboard';
 
 const { Text } = Typography;
-
-interface SqlDataSource {
-  id: number;
-  name: string;
-  connection_config?: string | null;
-}
 
 interface Props {
   /** 当用户点击"应用到图表"时回调，返回查询结果的 columns/rows */
@@ -20,7 +15,7 @@ interface Props {
 
 const SqlQueryEditor: React.FC<Props> = ({ onApplyToChart }) => {
   const { message } = App.useApp();
-  const [sqlSources, setSqlSources] = useState<SqlDataSource[]>([]);
+  const [sqlSources, setSqlSources] = useState<DataSource[]>([]);
   const [selectedDsId, setSelectedDsId] = useState<number | undefined>(undefined);
   const [query, setQuery] = useState<string>('SELECT 1');
   const [executing, setExecuting] = useState(false);
@@ -30,7 +25,7 @@ const SqlQueryEditor: React.FC<Props> = ({ onApplyToChart }) => {
   const loadSqlSources = useCallback(async () => {
     try {
       const all = await dataSourceService.list();
-      setSqlSources(all.filter((ds: any) => ds.source_type === 'sql'));
+      setSqlSources(all.filter(ds => ds.source_type === 'sql'));
     } catch {
       // 静默
     }
