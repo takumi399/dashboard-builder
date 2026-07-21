@@ -6,7 +6,9 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.models.dashboard import DataSource
+from app.api.datasources import _get_cipher
 from app.services.credential_cipher import ENCRYPTED_PREFIX
+from app.core.config import settings
 
 
 @pytest.mark.asyncio
@@ -243,3 +245,20 @@ async def test_legacy_plaintext_sql_credentials_are_redacted(
     legacy = next(item for item in response.json() if item["name"] == "legacy")
     assert legacy["connection"]["username"] == "legacy-user"
     assert "password" not in legacy["connection"]
+
+
+def test_debug_empty_key_uses_development_cipher(monkeypatch):
+    monkeypatch.setattr(settings, "DEBUG", True)
+    monkeypatch.setattr(settings, "DATASOURCE_ENCRYPTION_KEY", "")
+    cipher = _get_cipher()
+    assert cipher.encrypt({"db_type": "sqlite", "database": ":memory:"}).startswith(ENCRYPTED_PREFIX)
+
+
+def test_production_empty_key_is_rejected(monkeypatch):
+    from fastapi import HTTPException
+
+    monkeypatch.setattr(settings, "DEBUG", False)
+    monkeypatch.setattr(settings, "DATASOURCE_ENCRYPTION_KEY", "")
+    with pytest.raises(HTTPException) as exc_info:
+        _get_cipher()
+    assert exc_info.value.status_code == 500

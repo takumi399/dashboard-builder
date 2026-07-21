@@ -1,6 +1,10 @@
 from pydantic_settings import BaseSettings
 from pydantic import model_validator
 
+# This key exists only to keep the documented DEBUG=True local quick start usable.
+# Production settings (DEBUG=False) must always provide DATASOURCE_ENCRYPTION_KEY.
+DEVELOPMENT_DATASOURCE_ENCRYPTION_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
 class Settings(BaseSettings):
     APP_NAME: str = "Dashboard Builder API"
     DEBUG: bool = True

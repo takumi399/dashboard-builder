@@ -3,7 +3,10 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status,
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text as sa_text
 from app.core.database import get_db
-from app.core.config import settings
+from app.core.config import (
+    DEVELOPMENT_DATASOURCE_ENCRYPTION_KEY,
+    settings,
+)
 from app.core.limiter import limiter
 from app.api.auth import get_current_user
 from app.models.user import User
@@ -18,8 +21,11 @@ router = APIRouter()
 
 
 def _get_cipher() -> CredentialCipher:
+    key = settings.DATASOURCE_ENCRYPTION_KEY
+    if settings.DEBUG and not key:
+        key = DEVELOPMENT_DATASOURCE_ENCRYPTION_KEY
     try:
-        return CredentialCipher(settings.DATASOURCE_ENCRYPTION_KEY)
+        return CredentialCipher(key)
     except ValueError as exc:
         raise HTTPException(status_code=500, detail="Data-source credentials are unavailable") from exc
 
