@@ -2,16 +2,63 @@
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import json
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL
 
 from app.core.config import settings
+
+
+class WorkerPoolBusy(RuntimeError):
+    """Raised when all bounded SQL worker slots are occupied."""
+
+
+class BoundedWorkerPool:
+    """Run blocking SQL work without allowing an unbounded queue.
+
+    Timing out an await cannot terminate its Python thread. The capacity slot is
+    therefore released only when the underlying future actually finishes.
+    """
+
+    def __init__(self, max_workers: int, thread_name_prefix: str) -> None:
+        self._executor = ThreadPoolExecutor(
+            max_workers=max_workers,
+            thread_name_prefix=thread_name_prefix,
+        )
+        self._slots = threading.BoundedSemaphore(max_workers)
+
+    async def run(
+        self,
+        function: Callable[..., Any],
+        *args: Any,
+        timeout: float,
+    ) -> Any:
+        if not self._slots.acquire(blocking=False):
+            raise WorkerPoolBusy("SQL worker capacity is busy")
+        try:
+            future = self._executor.submit(partial(function, *args))
+        except BaseException:
+            self._slots.release()
+            raise
+        future.add_done_callback(lambda _future: self._slots.release())
+        wrapped = asyncio.wrap_future(future)
+        try:
+            return await asyncio.wait_for(asyncio.shield(wrapped), timeout=timeout)
+        except asyncio.TimeoutError:
+            wrapped.cancel()
+            raise
+
+    def shutdown(self) -> None:
+        self._executor.shutdown(wait=True, cancel_futures=True)
 
 
 class SQLExecutor:
@@ -62,7 +109,15 @@ class SQLExecutor:
             database = str(config.get("database") or ":memory:")
             if database != ":memory:" and not Path(database).is_absolute():
                 raise ValueError("SQLite target must be a normalized absolute path")
-            return URL.create("sqlite", database=database), {
+            if database == ":memory:":
+                url = URL.create("sqlite", database=database)
+            else:
+                url = URL.create(
+                    "sqlite",
+                    database=f"file:{Path(database).as_posix()}",
+                    query={"mode": "ro", "uri": "true"},
+                )
+            return url, {
                 "connect_args": {"timeout": timeout_seconds}
             }
 
@@ -187,7 +242,7 @@ class SQLExecutor:
     @staticmethod
     def _json_value(value: Any) -> Any:
         try:
-            json.dumps(value)
+            json.dumps(value, allow_nan=False)
         except (TypeError, ValueError, OverflowError):
             return str(value)
         return value

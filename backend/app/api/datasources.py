@@ -22,7 +22,7 @@ from app.schemas.datasource import (
     PublicSQLConnectionConfig, SQLExecuteRequest, SQLExecuteResponse,
 )
 from app.services.credential_cipher import CredentialCipher, ENCRYPTED_PREFIX
-from app.services.sql_executor import SQLExecutor
+from app.services.sql_executor import BoundedWorkerPool, SQLExecutor, WorkerPoolBusy
 from app.services.sql_policy import SQLPolicy, SQLPolicyError
 
 router = APIRouter()
@@ -36,6 +36,14 @@ policy = SQLPolicy(
     Path(settings.SQLITE_DATA_DIR),
 )
 executor = SQLExecutor()
+validation_pool = BoundedWorkerPool(
+    max_workers=4,
+    thread_name_prefix="sql-policy",
+)
+execution_pool = BoundedWorkerPool(
+    max_workers=4,
+    thread_name_prefix="sql-execute",
+)
 
 
 def _get_cipher() -> CredentialCipher:
@@ -149,8 +157,10 @@ async def get_datasource_data(
 
 
 @router.post("/sql/execute", response_model=SQLExecuteResponse)
+@limiter.limit("10/minute")
 async def execute_sql(
     body: SQLExecuteRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -174,7 +184,6 @@ async def execute_sql(
     try:
         stored = cipher.decrypt(ds.connection_config)
         normalized_query = policy.validate_query(body.query, stored["db_type"])
-        normalized_config = policy.validate_connection(stored)
     except SQLPolicyError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (KeyError, TypeError, ValueError) as exc:
@@ -183,14 +192,34 @@ async def execute_sql(
         ) from exc
 
     try:
-        exec_result = await asyncio.wait_for(
-            asyncio.to_thread(
-                executor.execute,
-                normalized_config,
-                normalized_query,
-            ),
+        normalized_config = await validation_pool.run(
+            policy.validate_connection,
+            stored,
+            timeout=settings.SQL_QUERY_TIMEOUT_SECONDS,
+        )
+    except SQLPolicyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except WorkerPoolBusy as exc:
+        raise HTTPException(status_code=503, detail="SQL service is busy") from exc
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(
+            status_code=504,
+            detail="SQL connection validation timed out",
+        ) from exc
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400, detail="Connection configuration is invalid"
+        ) from exc
+
+    try:
+        exec_result = await execution_pool.run(
+            executor.execute,
+            normalized_config,
+            normalized_query,
             timeout=settings.SQL_QUERY_TIMEOUT_SECONDS + 1,
         )
+    except WorkerPoolBusy as exc:
+        raise HTTPException(status_code=503, detail="SQL service is busy") from exc
     except asyncio.TimeoutError as exc:
         raise HTTPException(status_code=504, detail="SQL query timed out") from exc
     except Exception as exc:

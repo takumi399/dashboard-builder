@@ -1,10 +1,13 @@
 import decimal
 import importlib.util
+import asyncio
 import socket
 import sqlite3
+import threading
 from pathlib import Path
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from app.core.config import settings
 from app.services import sql_executor
@@ -14,6 +17,47 @@ from app.services.sql_policy import SQLPolicy
 
 def test_sql_executor_service_exists():
     assert importlib.util.find_spec("app.services.sql_executor") is not None
+
+
+def test_bounded_worker_pool_exists():
+    assert getattr(sql_executor, "BoundedWorkerPool", None) is not None
+
+
+@pytest.mark.asyncio
+async def test_bounded_worker_pool_holds_capacity_until_timed_out_worker_exits():
+    pool = sql_executor.BoundedWorkerPool(max_workers=1, thread_name_prefix="test-sql")
+    worker_started = threading.Event()
+    release_worker = threading.Event()
+    calls = []
+
+    def blocked_work():
+        calls.append("blocked")
+        worker_started.set()
+        release_worker.wait(timeout=1)
+        return "late"
+
+    try:
+        with pytest.raises(asyncio.TimeoutError):
+            await pool.run(blocked_work, timeout=0.01)
+        assert worker_started.is_set()
+        with pytest.raises(sql_executor.WorkerPoolBusy):
+            await pool.run(lambda: calls.append("overflow"), timeout=0.1)
+        assert calls == ["blocked"]
+
+        release_worker.set()
+        for _ in range(50):
+            try:
+                result = await pool.run(lambda: "recovered", timeout=0.1)
+                break
+            except sql_executor.WorkerPoolBusy:
+                await asyncio.sleep(0.01)
+        else:
+            pytest.fail("worker capacity was not released after worker exit")
+
+        assert result == "recovered"
+    finally:
+        release_worker.set()
+        pool.shutdown()
 
 
 def _create_sqlite_database(path: Path) -> None:
@@ -47,6 +91,15 @@ def test_execute_limits_sqlite_rows_and_marks_truncation(tmp_path, monkeypatch):
     }
 
 
+def test_execute_stringifies_non_finite_sqlite_float():
+    result = SQLExecutor().execute(
+        {"db_type": "sqlite", "database": ":memory:"},
+        "SELECT 1e999 AS value",
+    )
+
+    assert result["rows"] == [{"value": "inf"}]
+
+
 def test_execute_uses_normalized_sqlite_path_instead_of_process_cwd(
     tmp_path, monkeypatch
 ):
@@ -66,6 +119,18 @@ def test_execute_uses_normalized_sqlite_path_instead_of_process_cwd(
 
     assert normalized["database"] == str(database.resolve())
     assert result["rows"] == [{"count": 5}]
+
+
+def test_execute_does_not_create_missing_sqlite_target(tmp_path):
+    missing_database = tmp_path / "missing.db"
+
+    with pytest.raises(OperationalError):
+        SQLExecutor().execute(
+            {"db_type": "sqlite", "database": str(missing_database)},
+            "SELECT 1 AS value",
+        )
+
+    assert not missing_database.exists()
 
 
 class _FakeResult:

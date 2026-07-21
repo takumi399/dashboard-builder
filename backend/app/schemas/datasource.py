@@ -31,6 +31,20 @@ class SQLConnectionConfig(BaseModel):
     database: str
     username: Optional[str] = None
     password: Optional[str] = Field(default=None, repr=False)
+    sslmode: Optional[
+        Literal["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]
+    ] = None
+    sslrootcert: Optional[str] = None
+    sslcert: Optional[str] = None
+    sslkey: Optional[str] = Field(default=None, repr=False)
+    ssl: Optional[bool | dict[str, object]] = Field(default=None, repr=False)
+    ssl_ca: Optional[str] = None
+    ssl_cert: Optional[str] = None
+    ssl_key: Optional[str] = Field(default=None, repr=False)
+    ssl_verify_cert: Optional[bool] = None
+    ssl_verify_identity: Optional[bool] = None
+
+    model_config = {"extra": "forbid"}
 
 
 class PublicSQLConnectionConfig(BaseModel):

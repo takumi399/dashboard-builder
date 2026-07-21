@@ -1,15 +1,20 @@
 """测试数据源 API：CSV 上传、列表、数据查询、删除、SQL 数据源。"""
 
+import asyncio
 import json
+import threading
 import time
 import pytest
 from httpx import AsyncClient
+from pydantic import ValidationError
 from sqlalchemy import select
 
 from app.models.dashboard import DataSource
 from app.api import datasources as datasource_api
 from app.api.datasources import _get_cipher
+from app.schemas.datasource import SQLConnectionConfig
 from app.services.credential_cipher import ENCRYPTED_PREFIX
+from app.services.sql_executor import BoundedWorkerPool
 from app.core.config import settings
 
 
@@ -109,6 +114,25 @@ async def test_sql_execute(async_client: AsyncClient, auth_headers: dict):
 
 
 @pytest.mark.asyncio
+async def test_sql_execute_serializes_non_finite_sqlite_float(
+    async_client: AsyncClient, auth_headers: dict
+):
+    created = await async_client.post("/api/datasources", json={
+        "name": "non-finite-result",
+        "source_type": "sql",
+        "connection_config": {"db_type": "sqlite", "database": ":memory:"},
+    }, headers=auth_headers)
+    datasource_id = created.json()["id"]
+    response = await async_client.post("/api/datasources/sql/execute", json={
+        "datasource_id": datasource_id,
+        "query": "SELECT 1e999 AS value",
+    }, headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.json()["rows"] == [{"value": "inf"}]
+
+
+@pytest.mark.asyncio
 async def test_sql_ddl_blocked(async_client: AsyncClient, auth_headers: dict):
     """执行 DROP TABLE 应该被拦截返回 400。"""
     # 先创建 SQL 数据源
@@ -205,6 +229,74 @@ async def test_sql_credentials_are_encrypted_and_redacted(
     assert password not in listed.text
     assert ENCRYPTED_PREFIX not in listed.text
     assert "password" not in listed.json()[0]["connection"]
+
+
+def test_sql_connection_schema_preserves_typed_tls_options_and_rejects_typos():
+    postgresql = SQLConnectionConfig.model_validate({
+        "db_type": "postgresql",
+        "host": "database.example",
+        "database": "analytics",
+        "sslmode": "verify-full",
+        "sslrootcert": "root-ca.pem",
+        "sslcert": "client-cert.pem",
+        "sslkey": "client-key.pem",
+        "ssl_ca": "alias-ca.pem",
+        "ssl_cert": "alias-cert.pem",
+        "ssl_key": "alias-key.pem",
+    })
+    mysql = SQLConnectionConfig.model_validate({
+        "db_type": "mysql",
+        "host": "mysql.example",
+        "database": "analytics",
+        "ssl": True,
+        "ssl_ca": "mysql-ca.pem",
+        "ssl_cert": "mysql-cert.pem",
+        "ssl_key": "mysql-key.pem",
+        "ssl_verify_cert": True,
+        "ssl_verify_identity": True,
+    })
+
+    assert postgresql.model_dump(exclude_none=True)["sslmode"] == "verify-full"
+    assert postgresql.model_dump(exclude_none=True)["sslrootcert"] == "root-ca.pem"
+    assert postgresql.model_dump(exclude_none=True)["ssl_ca"] == "alias-ca.pem"
+    assert mysql.model_dump(exclude_none=True)["ssl"] is True
+    assert mysql.model_dump(exclude_none=True)["ssl_verify_identity"] is True
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        SQLConnectionConfig.model_validate({
+            "db_type": "postgresql",
+            "database": "analytics",
+            "ssl_mod": "verify-full",
+        })
+
+
+@pytest.mark.asyncio
+async def test_sql_tls_options_are_encrypted_and_redacted(
+    async_client: AsyncClient, auth_headers: dict, db_session
+):
+    tls_config = {
+        "sslmode": "verify-full",
+        "sslrootcert": "root-ca.pem",
+        "sslcert": "client-cert.pem",
+        "sslkey": "private-client-key.pem",
+    }
+    created = await async_client.post("/api/datasources", json={
+        "name": "tls-source",
+        "source_type": "sql",
+        "connection_config": {
+            "db_type": "postgresql",
+            "host": "database.example",
+            "database": "analytics",
+            **tls_config,
+        },
+    }, headers=auth_headers)
+
+    assert created.status_code == 201
+    assert all(value not in created.text for value in tls_config.values())
+    row = (await db_session.execute(
+        select(DataSource).where(DataSource.name == "tls-source")
+    )).scalar_one()
+    stored = _get_cipher().decrypt(row.connection_config)
+    assert {key: stored[key] for key in tls_config} == tls_config
 
 
 @pytest.mark.asyncio
@@ -311,7 +403,98 @@ async def test_sql_execute_times_out_without_exposing_connection_url(
     assert response.status_code == 504
     assert response.json() == {"detail": "SQL query timed out"}
     assert "sqlite:///" not in response.text
-    assert configured_timeouts == [settings.SQL_QUERY_TIMEOUT_SECONDS + 1]
+    assert configured_timeouts == [
+        settings.SQL_QUERY_TIMEOUT_SECONDS,
+        settings.SQL_QUERY_TIMEOUT_SECONDS + 1,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_timed_out_sql_work_cannot_grow_workers_or_connections(
+    async_client: AsyncClient, auth_headers: dict, monkeypatch
+):
+    created = await async_client.post("/api/datasources", json={
+        "name": "bounded-timeout",
+        "source_type": "sql",
+        "connection_config": {"db_type": "sqlite", "database": ":memory:"},
+    }, headers=auth_headers)
+    datasource_id = created.json()["id"]
+    worker_started = threading.Event()
+    release_worker = threading.Event()
+    executor_calls = []
+
+    class BlockingExecutor:
+        def execute(self, _config, _query):
+            executor_calls.append("execute")
+            worker_started.set()
+            release_worker.wait(timeout=0.5)
+            return _successful_sql_result()
+
+    class FastTimeoutPool(BoundedWorkerPool):
+        async def run(self, function, *args, timeout):
+            return await super().run(function, *args, timeout=0.01)
+
+    pool = FastTimeoutPool(max_workers=1, thread_name_prefix="test-route-sql")
+    monkeypatch.setattr(datasource_api, "executor", BlockingExecutor())
+    monkeypatch.setattr(datasource_api, "execution_pool", pool, raising=False)
+    try:
+        first = await async_client.post("/api/datasources/sql/execute", json={
+            "datasource_id": datasource_id,
+            "query": "SELECT 1 AS value",
+        }, headers=auth_headers)
+        second = await async_client.post("/api/datasources/sql/execute", json={
+            "datasource_id": datasource_id,
+            "query": "SELECT 1 AS value",
+        }, headers=auth_headers)
+
+        assert worker_started.is_set()
+        assert first.status_code == 504
+        assert second.status_code == 503
+        assert second.json() == {"detail": "SQL service is busy"}
+        assert executor_calls == ["execute"]
+
+        release_worker.set()
+        for _ in range(50):
+            recovered = await async_client.post(
+                "/api/datasources/sql/execute",
+                json={"datasource_id": datasource_id, "query": "SELECT 1 AS value"},
+                headers=auth_headers,
+            )
+            if recovered.status_code != 503:
+                break
+            await asyncio.sleep(0.01)
+        assert recovered.status_code == 200
+    finally:
+        release_worker.set()
+        pool.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_sql_execute_is_rate_limited(
+    async_client: AsyncClient, auth_headers: dict, monkeypatch
+):
+    created = await async_client.post("/api/datasources", json={
+        "name": "rate-limited-sql",
+        "source_type": "sql",
+        "connection_config": {"db_type": "sqlite", "database": ":memory:"},
+    }, headers=auth_headers)
+    datasource_id = created.json()["id"]
+
+    class SuccessfulExecutor:
+        def execute(self, _config, _query):
+            return _successful_sql_result()
+
+    monkeypatch.setattr(datasource_api, "executor", SuccessfulExecutor())
+    responses = [
+        await async_client.post("/api/datasources/sql/execute", json={
+            "datasource_id": datasource_id,
+            "query": "SELECT 1 AS value",
+        }, headers=auth_headers)
+        for _ in range(11)
+    ]
+
+    assert all(response.status_code == 200 for response in responses[:10])
+    assert responses[10].status_code == 429
 
 
 @pytest.mark.asyncio
@@ -328,6 +511,8 @@ async def test_sql_execute_uses_only_policy_normalized_config_and_query(
             "database": "analytics",
             "username": "reader",
             "password": "secret",
+            "sslmode": "verify-full",
+            "sslrootcert": "root-ca.pem",
         },
     }, headers=auth_headers)
     datasource_id = created.json()["id"]
@@ -339,6 +524,8 @@ async def test_sql_execute_uses_only_policy_normalized_config_and_query(
         "database": "analytics",
         "username": "reader",
         "password": "secret",
+        "sslmode": "verify-full",
+        "sslrootcert": "root-ca.pem",
     }
     calls = []
 
@@ -350,6 +537,8 @@ async def test_sql_execute_uses_only_policy_normalized_config_and_query(
 
         def validate_connection(self, config):
             assert config["host"] == "database.example"
+            assert config["sslmode"] == "verify-full"
+            assert config["sslrootcert"] == "root-ca.pem"
             return normalized_config
 
     class RecordingExecutor:
@@ -367,6 +556,62 @@ async def test_sql_execute_uses_only_policy_normalized_config_and_query(
 
     assert response.status_code == 200
     assert calls == [(normalized_config, "SELECT 1 AS value")]
+
+
+@pytest.mark.asyncio
+async def test_sql_connection_resolution_does_not_block_event_loop(
+    async_client: AsyncClient, auth_headers: dict, monkeypatch
+):
+    created = await async_client.post("/api/datasources", json={
+        "name": "blocking-resolution",
+        "source_type": "sql",
+        "connection_config": {
+            "db_type": "postgresql",
+            "host": "database.example",
+            "database": "analytics",
+        },
+    }, headers=auth_headers)
+    datasource_id = created.json()["id"]
+    resolution_started = threading.Event()
+    release_resolution = threading.Event()
+
+    class BlockingPolicy:
+        def validate_query(self, _query, _db_type):
+            return "SELECT 1 AS value"
+
+        def validate_connection(self, config):
+            resolution_started.set()
+            release_resolution.wait(timeout=0.5)
+            return {
+                **config,
+                "host": "203.0.113.9",
+                "original_host": config["host"],
+            }
+
+    class SuccessfulExecutor:
+        def execute(self, _config, _query):
+            return _successful_sql_result()
+
+    monkeypatch.setattr(datasource_api, "policy", BlockingPolicy())
+    monkeypatch.setattr(datasource_api, "executor", SuccessfulExecutor())
+    fallback_release = threading.Timer(0.2, release_resolution.set)
+    fallback_release.start()
+    started_at = time.monotonic()
+    request_task = asyncio.create_task(async_client.post(
+        "/api/datasources/sql/execute",
+        json={"datasource_id": datasource_id, "query": "SELECT 1 AS value"},
+        headers=auth_headers,
+    ))
+
+    await asyncio.sleep(0.02)
+    heartbeat_elapsed = time.monotonic() - started_at
+    release_resolution.set()
+    response = await request_task
+    fallback_release.cancel()
+
+    assert resolution_started.is_set()
+    assert heartbeat_elapsed < 0.1
+    assert response.status_code == 200
 
 
 @pytest.mark.asyncio
