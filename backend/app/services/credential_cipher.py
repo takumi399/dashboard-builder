@@ -32,7 +32,7 @@ class CredentialCipher:
             else:
                 payload = stored
             result = json.loads(payload)
-        except (InvalidToken, UnicodeDecodeError, json.JSONDecodeError, TypeError) as exc:
+        except (InvalidToken, UnicodeError, json.JSONDecodeError, TypeError) as exc:
             raise ValueError("Stored data-source credentials are invalid") from exc
 
         if not isinstance(result, dict):

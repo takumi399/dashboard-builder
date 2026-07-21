@@ -41,3 +41,9 @@ def test_public_config_removes_password():
         "db_type": "sqlite",
         "database": "sample.db",
     }
+
+
+def test_cipher_rejects_malformed_prefixed_ciphertext():
+    cipher = CredentialCipher(Fernet.generate_key().decode())
+    with pytest.raises(ValueError, match="credentials are invalid"):
+        cipher.decrypt(ENCRYPTED_PREFIX + "\ud800")
