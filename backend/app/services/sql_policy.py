@@ -73,8 +73,8 @@ class SQLPolicy:
         except (ValueError, TypeError) as exc:
             raise SQLPolicyError("Query must be a single read-only SQL statement") from exc
 
-    def validate_host(self, host: str) -> None:
-        """Validate a hostname or IP, checking every resolved address."""
+    def validate_host(self, host: str) -> str:
+        """Validate every resolved address and return the first address pinned as an IP."""
         original = str(host or "").strip()
         if not original:
             raise SQLPolicyError("Host is required")
@@ -93,26 +93,42 @@ class SQLPolicy:
         else:
             addresses = [literal]
 
+        addresses = [
+            getattr(address, "ipv4_mapped", None) or address
+            for address in addresses
+        ]
         for address in addresses:
             self._validate_address(address, explicitly_allowed)
+        return str(addresses[0])
 
-    def validate_connection(self, config: dict) -> None:
-        """Validate the database type and its connection target."""
+    def validate_connection(self, config: dict) -> dict:
+        """Return connection data with canonical SQLite paths or a pinned network IP.
+
+        Network consumers must connect to ``host`` and may use ``original_host``
+        only for driver-specific TLS/SNI and certificate hostname verification.
+        """
         if not isinstance(config, dict):
             raise SQLPolicyError("Connection configuration is invalid")
         db_type = str(config.get("db_type") or "").strip().lower()
+        normalized = dict(config)
+        normalized["db_type"] = db_type
         if db_type == "sqlite":
             database = str(config.get("database") or ":memory:")
             if database == ":memory:":
-                return
+                normalized["database"] = database
+                return normalized
             data_dir = self.sqlite_data_dir.resolve()
             candidate = (data_dir / database).resolve()
             if not candidate.is_relative_to(data_dir):
                 raise SQLPolicyError("SQLite database path is not allowed")
-            return
+            normalized["database"] = str(candidate)
+            return normalized
         if db_type not in {"postgres", "postgresql", "mysql"}:
             raise SQLPolicyError("Unsupported database type")
-        self.validate_host(config.get("host", ""))
+        original_host = str(config.get("host") or "").strip()
+        normalized["host"] = self.validate_host(original_host)
+        normalized["original_host"] = original_host
+        return normalized
 
     def _dialect(self, db_type: str) -> str:
         key = str(db_type or "").strip().lower()

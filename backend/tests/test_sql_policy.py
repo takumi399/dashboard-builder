@@ -83,6 +83,21 @@ def test_validate_host_rejects_unsafe_addresses(policy, host):
         direct.validate_host(host)
 
 
+def test_validate_host_rejects_ipv4_mapped_metadata_address(tmp_path):
+    host = "::ffff:169.254.169.254"
+    policy = SQLPolicy({host}, tmp_path, resolver=lambda *_args, **_kwargs: [])
+
+    with pytest.raises(SQLPolicyError, match="not allowed"):
+        policy.validate_host(host)
+
+
+def test_validate_host_pins_ipv4_mapped_address_as_ipv4(tmp_path):
+    host = "::ffff:8.8.8.8"
+    policy = SQLPolicy({host}, tmp_path, resolver=lambda *_args, **_kwargs: [])
+
+    assert policy.validate_host(host) == "8.8.8.8"
+
+
 def test_validate_host_rejects_private_address_without_allowlist(policy):
     with pytest.raises(SQLPolicyError, match="not allowed"):
         policy.validate_host("private.example")
@@ -105,11 +120,21 @@ def test_validate_host_rejects_any_disallowed_address_from_hostname(policy):
 
 
 def test_validate_connection_allows_memory_sqlite(policy):
-    policy.validate_connection({"db_type": "sqlite", "database": ":memory:"})
+    assert policy.validate_connection(
+        {"db_type": "sqlite", "database": ":memory:"}
+    ) == {"db_type": "sqlite", "database": ":memory:"}
 
 
 def test_validate_connection_confines_sqlite_path(policy, tmp_path):
-    policy.validate_connection({"db_type": "sqlite", "database": "nested/app.db"})
+    normalized = policy.validate_connection(
+        {"db_type": "sqlite", "database": "nested/app.db", "label": "legacy"}
+    )
+
+    assert normalized == {
+        "db_type": "sqlite",
+        "database": str((tmp_path / "nested/app.db").resolve()),
+        "label": "legacy",
+    }
 
     with pytest.raises(SQLPolicyError, match="SQLite database path is not allowed"):
         policy.validate_connection({"db_type": "sqlite", "database": "../outside.db"})
@@ -120,3 +145,40 @@ def test_validate_connection_validates_network_host(policy):
         policy.validate_connection({"db_type": "postgresql", "host": ""})
 
     policy.validate_connection({"db_type": "postgresql", "host": "docker"})
+
+
+def test_validate_connection_pins_first_validated_dns_answer(tmp_path):
+    calls = []
+
+    def changing_resolver(host, *args, **kwargs):
+        calls.append(host)
+        address = "8.8.8.8" if len(calls) == 1 else "169.254.169.254"
+        return [
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                socket.IPPROTO_TCP,
+                "",
+                (address, 5432),
+            )
+        ]
+
+    policy = SQLPolicy({"db.example"}, tmp_path, resolver=changing_resolver)
+
+    normalized = policy.validate_connection(
+        {
+            "db_type": "postgresql",
+            "host": "db.example",
+            "port": 5432,
+            "database": "dashboard",
+        }
+    )
+
+    assert calls == ["db.example"]
+    assert normalized == {
+        "db_type": "postgresql",
+        "host": "8.8.8.8",
+        "original_host": "db.example",
+        "port": 5432,
+        "database": "dashboard",
+    }
