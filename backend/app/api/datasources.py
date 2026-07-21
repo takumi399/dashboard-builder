@@ -1,7 +1,13 @@
-import json, csv, io, re, asyncio
+import asyncio
+import csv
+import io
+import json
+from pathlib import Path
+
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text as sa_text
+from sqlalchemy import select
 from app.core.database import get_db
 from app.core.config import (
     DEVELOPMENT_DATASOURCE_ENCRYPTION_KEY,
@@ -15,9 +21,21 @@ from app.schemas.datasource import (
     DataSourceCreate, DataSourceResponse,
     PublicSQLConnectionConfig, SQLExecuteRequest, SQLExecuteResponse,
 )
-from app.services.credential_cipher import CredentialCipher
+from app.services.credential_cipher import CredentialCipher, ENCRYPTED_PREFIX
+from app.services.sql_executor import SQLExecutor
+from app.services.sql_policy import SQLPolicy, SQLPolicyError
 
 router = APIRouter()
+logger = structlog.get_logger(__name__)
+policy = SQLPolicy(
+    {
+        host.strip()
+        for host in settings.SQL_ALLOWED_HOSTS.split(",")
+        if host.strip()
+    },
+    Path(settings.SQLITE_DATA_DIR),
+)
+executor = SQLExecutor()
 
 
 def _get_cipher() -> CredentialCipher:
@@ -48,71 +66,6 @@ def _to_response(ds: DataSource, cipher: CredentialCipher) -> DataSourceResponse
         created_at=ds.created_at,
         connection=connection,
     )
-
-# ── DDL / DML 黑名单关键字（只允许 SELECT） ──
-FORBIDDEN_SQL_KEYWORDS = re.compile(
-    r'\b(DROP|ALTER|TRUNCATE|DELETE|UPDATE|INSERT|CREATE|GRANT|REVOKE|EXEC|EXECUTE)\b',
-    re.IGNORECASE,
-)
-MULTI_STATEMENT = re.compile(r';\s*\S')  # 禁止多语句
-
-
-def _validate_select_only(query: str) -> None:
-    """校验 SQL 查询只包含 SELECT 语句，拒绝 DDL/DML。"""
-    stripped = query.strip()
-    if not stripped.upper().startswith('SELECT'):
-        raise HTTPException(status_code=400, detail="只允许执行 SELECT 查询")
-    if FORBIDDEN_SQL_KEYWORDS.search(stripped):
-        raise HTTPException(status_code=400, detail="查询包含被禁止的关键字（DROP/ALTER/TRUNCATE/DELETE/UPDATE/INSERT/CREATE/GRANT/REVOKE/EXEC）")
-    if MULTI_STATEMENT.search(stripped):
-        raise HTTPException(status_code=400, detail="不允许执行多条 SQL 语句")
-
-
-def _build_connection_url(config: dict) -> str:
-    """根据 connection_config 构建 SQLAlchemy 连接 URL。"""
-    db_type = config.get("db_type", "").lower()
-    if db_type == "sqlite":
-        database = config.get("database", ":memory:")
-        return f"sqlite:///{database}"
-    elif db_type == "mysql":
-        user = config.get("username", "")
-        pwd = config.get("password", "")
-        host = config.get("host", "localhost")
-        port = config.get("port", 3306)
-        database = config.get("database", "")
-        return f"mysql+pymysql://{user}:{pwd}@{host}:{port}/{database}"
-    elif db_type == "postgresql":
-        user = config.get("username", "")
-        pwd = config.get("password", "")
-        host = config.get("host", "localhost")
-        port = config.get("port", 5432)
-        database = config.get("database", "")
-        return f"postgresql+psycopg2://{user}:{pwd}@{host}:{port}/{database}"
-    else:
-        raise HTTPException(status_code=400, detail=f"不支持的数据库类型: {db_type}")
-
-
-def _execute_sql_sync(connection_url: str, query: str) -> dict:
-    """同步执行 SQL 查询，返回 {columns, rows, row_count}。"""
-    from sqlalchemy import create_engine
-    engine = create_engine(connection_url)
-    try:
-        with engine.connect() as conn:
-            result = conn.execute(sa_text(query))
-            if result.returns_rows:
-                columns = list(result.keys())
-                rows = [dict(zip(columns, row)) for row in result.fetchall()]
-                # 将不可 JSON 序列化的类型转为字符串
-                for row in rows:
-                    for k, v in row.items():
-                        if not isinstance(v, (int, float, str, bool, type(None))):
-                            row[k] = str(v)
-                return {"columns": columns, "rows": rows, "row_count": len(rows)}
-            else:
-                return {"columns": [], "rows": [], "row_count": 0}
-    finally:
-        engine.dispose()
-
 
 @router.get("", response_model=list[DataSourceResponse])
 @limiter.limit("30/minute")
@@ -202,10 +155,6 @@ async def execute_sql(
     db: AsyncSession = Depends(get_db),
 ):
     """对已配置的 SQL 数据源执行 SELECT 查询。"""
-    # 1. 校验 SQL 语句
-    _validate_select_only(body.query)
-
-    # 2. 获取数据源
     result = await db.execute(
         select(DataSource).where(
             DataSource.id == body.datasource_id,
@@ -220,22 +169,41 @@ async def execute_sql(
     if not ds.connection_config:
         raise HTTPException(status_code=400, detail="数据源缺少连接配置")
 
-    # 3. 解析连接配置并构建 URL
+    cipher = _get_cipher()
+    legacy_plaintext = not ds.connection_config.startswith(ENCRYPTED_PREFIX)
     try:
-        config = _get_cipher().decrypt(ds.connection_config)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="连接配置格式无效")
-    connection_url = _build_connection_url(config)
+        stored = cipher.decrypt(ds.connection_config)
+        normalized_query = policy.validate_query(body.query, stored["db_type"])
+        normalized_config = policy.validate_connection(stored)
+    except SQLPolicyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400, detail="Connection configuration is invalid"
+        ) from exc
 
-    # 4. 在 executor 中执行同步 SQL
     try:
-        exec_result = await asyncio.get_event_loop().run_in_executor(
-            None, _execute_sql_sync, connection_url, body.query,
+        exec_result = await asyncio.wait_for(
+            asyncio.to_thread(
+                executor.execute,
+                normalized_config,
+                normalized_query,
+            ),
+            timeout=settings.SQL_QUERY_TIMEOUT_SECONDS + 1,
         )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"SQL 执行失败: {str(e)}")
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(status_code=504, detail="SQL query timed out") from exc
+    except Exception as exc:
+        logger.error(
+            "database_query_failed",
+            exception_class=type(exc).__name__,
+            datasource_id=ds.id,
+        )
+        raise HTTPException(status_code=502, detail="Database query failed") from exc
+
+    if legacy_plaintext:
+        ds.connection_config = cipher.encrypt(stored)
+        await db.commit()
 
     return SQLExecuteResponse(**exec_result)
 

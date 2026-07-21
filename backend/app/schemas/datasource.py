@@ -50,3 +50,4 @@ class SQLExecuteResponse(BaseModel):
     columns: list[str]
     rows: list[dict]
     row_count: int
+    truncated: bool = False

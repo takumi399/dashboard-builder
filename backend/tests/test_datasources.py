@@ -1,11 +1,13 @@
 """测试数据源 API：CSV 上传、列表、数据查询、删除、SQL 数据源。"""
 
 import json
+import time
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.models.dashboard import DataSource
+from app.api import datasources as datasource_api
 from app.api.datasources import _get_cipher
 from app.services.credential_cipher import ENCRYPTED_PREFIX
 from app.core.config import settings
@@ -103,6 +105,7 @@ async def test_sql_execute(async_client: AsyncClient, auth_headers: dict):
     assert data["columns"] == ["value"]
     assert data["rows"] == [{"value": 1}]
     assert data["row_count"] == 1
+    assert data["truncated"] is False
 
 
 @pytest.mark.asyncio
@@ -124,7 +127,7 @@ async def test_sql_ddl_blocked(async_client: AsyncClient, auth_headers: dict):
         "query": "DROP TABLE users",
     }, headers=auth_headers)
     assert resp.status_code == 400
-    assert "只允许执行 SELECT" in resp.json()["detail"]
+    assert "read-only" in resp.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -262,3 +265,216 @@ def test_production_empty_key_is_rejected(monkeypatch):
     with pytest.raises(HTTPException) as exc_info:
         _get_cipher()
     assert exc_info.value.status_code == 500
+
+
+def _successful_sql_result():
+    return {
+        "columns": ["value"],
+        "rows": [{"value": 1}],
+        "row_count": 1,
+        "truncated": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_sql_execute_times_out_without_exposing_connection_url(
+    async_client: AsyncClient, auth_headers: dict, monkeypatch
+):
+    created = await async_client.post("/api/datasources", json={
+        "name": "slow-query",
+        "source_type": "sql",
+        "connection_config": {"db_type": "sqlite", "database": ":memory:"},
+    }, headers=auth_headers)
+    datasource_id = created.json()["id"]
+
+    class SlowExecutor:
+        def execute(self, _config, _query):
+            time.sleep(0.1)
+            return _successful_sql_result()
+
+    slow_executor = SlowExecutor()
+    monkeypatch.setattr(datasource_api, "executor", slow_executor, raising=False)
+    original_wait_for = datasource_api.asyncio.wait_for
+    configured_timeouts = []
+
+    async def fast_wait_for(awaitable, timeout):
+        configured_timeouts.append(timeout)
+        return await original_wait_for(awaitable, timeout=0.01)
+
+    monkeypatch.setattr(datasource_api.asyncio, "wait_for", fast_wait_for)
+
+    response = await async_client.post("/api/datasources/sql/execute", json={
+        "datasource_id": datasource_id,
+        "query": "SELECT 1 AS value",
+    }, headers=auth_headers)
+
+    assert response.status_code == 504
+    assert response.json() == {"detail": "SQL query timed out"}
+    assert "sqlite:///" not in response.text
+    assert configured_timeouts == [settings.SQL_QUERY_TIMEOUT_SECONDS + 1]
+
+
+@pytest.mark.asyncio
+async def test_sql_execute_uses_only_policy_normalized_config_and_query(
+    async_client: AsyncClient, auth_headers: dict, monkeypatch
+):
+    created = await async_client.post("/api/datasources", json={
+        "name": "pinned-target",
+        "source_type": "sql",
+        "connection_config": {
+            "db_type": "postgresql",
+            "host": "database.example",
+            "port": 5432,
+            "database": "analytics",
+            "username": "reader",
+            "password": "secret",
+        },
+    }, headers=auth_headers)
+    datasource_id = created.json()["id"]
+    normalized_config = {
+        "db_type": "postgresql",
+        "host": "203.0.113.9",
+        "original_host": "database.example",
+        "port": 5432,
+        "database": "analytics",
+        "username": "reader",
+        "password": "secret",
+    }
+    calls = []
+
+    class FakePolicy:
+        def validate_query(self, query, db_type):
+            assert query == " select 1 as value "
+            assert db_type == "postgresql"
+            return "SELECT 1 AS value"
+
+        def validate_connection(self, config):
+            assert config["host"] == "database.example"
+            return normalized_config
+
+    class RecordingExecutor:
+        def execute(self, config, query):
+            calls.append((config, query))
+            return _successful_sql_result()
+
+    monkeypatch.setattr(datasource_api, "policy", FakePolicy(), raising=False)
+    monkeypatch.setattr(datasource_api, "executor", RecordingExecutor(), raising=False)
+
+    response = await async_client.post("/api/datasources/sql/execute", json={
+        "datasource_id": datasource_id,
+        "query": " select 1 as value ",
+    }, headers=auth_headers)
+
+    assert response.status_code == 200
+    assert calls == [(normalized_config, "SELECT 1 AS value")]
+
+
+@pytest.mark.asyncio
+async def test_sql_execute_maps_driver_error_without_sensitive_output_or_logs(
+    async_client: AsyncClient, auth_headers: dict, monkeypatch
+):
+    password = "driver-password"
+    query = "SELECT secret_column FROM accounts"
+    connection_url = f"postgresql://reader:{password}@database.example/analytics"
+    created = await async_client.post("/api/datasources", json={
+        "name": "driver-error",
+        "source_type": "sql",
+        "connection_config": {
+            "db_type": "sqlite",
+            "database": ":memory:",
+            "password": password,
+        },
+    }, headers=auth_headers)
+    datasource_id = created.json()["id"]
+    log_calls = []
+
+    class FailingExecutor:
+        def execute(self, _config, _query):
+            raise RuntimeError(connection_url)
+
+    class RecordingLogger:
+        def error(self, event, **kwargs):
+            log_calls.append((event, kwargs))
+
+    failing_executor = FailingExecutor()
+    monkeypatch.setattr(datasource_api, "executor", failing_executor, raising=False)
+    monkeypatch.setattr(datasource_api, "logger", RecordingLogger(), raising=False)
+
+    response = await async_client.post("/api/datasources/sql/execute", json={
+        "datasource_id": datasource_id,
+        "query": query,
+    }, headers=auth_headers)
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": "Database query failed"}
+    assert password not in response.text
+    assert query not in response.text
+    assert connection_url not in response.text
+    assert log_calls == [(
+        "database_query_failed",
+        {"exception_class": "RuntimeError", "datasource_id": datasource_id},
+    )]
+
+
+@pytest.mark.asyncio
+async def test_successful_legacy_sql_execution_encrypts_stored_config(
+    async_client: AsyncClient, auth_headers: dict, db_session, monkeypatch
+):
+    created = await async_client.post("/api/datasources", json={
+        "name": "legacy-success",
+        "source_type": "sql",
+        "connection_config": {"db_type": "sqlite", "database": ":memory:"},
+    }, headers=auth_headers)
+    datasource_id = created.json()["id"]
+    row = (await db_session.execute(
+        select(DataSource).where(DataSource.id == datasource_id)
+    )).scalar_one()
+    row.connection_config = json.dumps({"db_type": "sqlite", "database": ":memory:"})
+    await db_session.commit()
+
+    class SuccessfulExecutor:
+        def execute(self, _config, _query):
+            return _successful_sql_result()
+
+    monkeypatch.setattr(datasource_api, "executor", SuccessfulExecutor(), raising=False)
+    response = await async_client.post("/api/datasources/sql/execute", json={
+        "datasource_id": datasource_id,
+        "query": "SELECT 1 AS value",
+    }, headers=auth_headers)
+
+    assert response.status_code == 200
+    await db_session.refresh(row)
+    assert row.connection_config.startswith(ENCRYPTED_PREFIX)
+
+
+@pytest.mark.asyncio
+async def test_failed_legacy_sql_execution_does_not_modify_stored_config(
+    async_client: AsyncClient, auth_headers: dict, db_session, monkeypatch
+):
+    created = await async_client.post("/api/datasources", json={
+        "name": "legacy-failure",
+        "source_type": "sql",
+        "connection_config": {"db_type": "sqlite", "database": ":memory:"},
+    }, headers=auth_headers)
+    datasource_id = created.json()["id"]
+    row = (await db_session.execute(
+        select(DataSource).where(DataSource.id == datasource_id)
+    )).scalar_one()
+    plaintext = json.dumps({"db_type": "sqlite", "database": ":memory:"})
+    row.connection_config = plaintext
+    await db_session.commit()
+
+    class FailingExecutor:
+        def execute(self, _config, _query):
+            raise RuntimeError("connection failed")
+
+    failing_executor = FailingExecutor()
+    monkeypatch.setattr(datasource_api, "executor", failing_executor, raising=False)
+    response = await async_client.post("/api/datasources/sql/execute", json={
+        "datasource_id": datasource_id,
+        "query": "SELECT 1 AS value",
+    }, headers=auth_headers)
+
+    assert response.status_code == 502
+    await db_session.refresh(row)
+    assert row.connection_config == plaintext

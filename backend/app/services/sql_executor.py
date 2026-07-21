@@ -1,0 +1,193 @@
+"""Bounded synchronous execution for validated SQL data sources."""
+
+from __future__ import annotations
+
+import ipaddress
+import json
+import time
+from pathlib import Path
+from typing import Any
+
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import URL
+
+from app.core.config import settings
+
+
+class SQLExecutor:
+    """Execute policy-normalized SQL with connection and result bounds."""
+
+    def execute(self, config: dict, query: str) -> dict:
+        timeout_seconds = settings.SQL_QUERY_TIMEOUT_SECONDS
+        max_rows = settings.SQL_MAX_ROWS
+        url, engine_kwargs = self._engine_config(config, timeout_seconds)
+        engine = create_engine(url, **engine_kwargs)
+        try:
+            with engine.connect() as connection:
+                cleanup = self._configure_connection(
+                    connection, config, timeout_seconds
+                )
+                try:
+                    result = connection.execute(text(query))
+                    if not result.returns_rows:
+                        return {
+                            "columns": [],
+                            "rows": [],
+                            "row_count": 0,
+                            "truncated": False,
+                        }
+                    columns = list(result.keys())
+                    fetched = result.fetchmany(max_rows + 1)
+                    rows = [
+                        {
+                            column: self._json_value(value)
+                            for column, value in zip(columns, row)
+                        }
+                        for row in fetched[:max_rows]
+                    ]
+                    return {
+                        "columns": columns,
+                        "rows": rows,
+                        "row_count": len(rows),
+                        "truncated": len(fetched) > max_rows,
+                    }
+                finally:
+                    cleanup()
+        finally:
+            engine.dispose()
+
+    def _engine_config(self, config: dict, timeout_seconds: int) -> tuple[URL, dict]:
+        db_type = str(config.get("db_type") or "").lower()
+        if db_type == "sqlite":
+            database = str(config.get("database") or ":memory:")
+            if database != ":memory:" and not Path(database).is_absolute():
+                raise ValueError("SQLite target must be a normalized absolute path")
+            return URL.create("sqlite", database=database), {
+                "connect_args": {"timeout": timeout_seconds}
+            }
+
+        host = str(config.get("host") or "")
+        try:
+            ipaddress.ip_address(host)
+        except ValueError as exc:
+            raise ValueError("Network target must be a pinned IP address") from exc
+
+        common = {
+            "username": config.get("username"),
+            "password": config.get("password"),
+            "host": host,
+            "port": config.get("port"),
+            "database": config.get("database"),
+        }
+        if db_type in {"postgres", "postgresql"}:
+            connect_args = {
+                "connect_timeout": timeout_seconds,
+                "options": (
+                    "-c default_transaction_read_only=on "
+                    f"-c statement_timeout={timeout_seconds * 1000}"
+                ),
+            }
+            self._configure_postgresql_tls(config, connect_args)
+            return URL.create("postgresql+psycopg", **common), {
+                "connect_args": connect_args
+            }
+        if db_type == "mysql":
+            if self._mysql_tls_configured(config):
+                original_host = str(config.get("original_host") or host)
+                if original_host != host:
+                    raise ValueError("MySQL TLS cannot verify a pinned target")
+            connect_args = {
+                "connect_timeout": timeout_seconds,
+                "read_timeout": timeout_seconds,
+                "write_timeout": timeout_seconds,
+                "init_command": "SET SESSION TRANSACTION READ ONLY",
+            }
+            self._copy_mysql_tls_options(config, connect_args)
+            return URL.create("mysql+pymysql", **common), {
+                "connect_args": connect_args
+            }
+        raise ValueError("Unsupported database type")
+
+    @staticmethod
+    def _configure_connection(connection, config: dict, timeout_seconds: int):
+        db_type = str(config.get("db_type") or "").lower()
+        if db_type == "sqlite":
+            connection.exec_driver_sql("PRAGMA query_only = ON")
+            raw_connection = connection.connection.driver_connection
+            deadline = time.monotonic() + timeout_seconds
+            raw_connection.set_progress_handler(
+                lambda: int(time.monotonic() >= deadline), 1000
+            )
+            return lambda: raw_connection.set_progress_handler(None, 0)
+        if db_type == "mysql":
+            connection.exec_driver_sql(
+                f"SET SESSION MAX_EXECUTION_TIME={timeout_seconds * 1000}"
+            )
+        return lambda: None
+
+    @staticmethod
+    def _configure_postgresql_tls(config: dict, connect_args: dict) -> None:
+        sslmode = config.get("sslmode")
+        tls_configured = bool(
+            sslmode and str(sslmode).lower() != "disable"
+        ) or any(
+            config.get(key)
+            for key in ("ssl", "sslrootcert", "sslcert", "sslkey", "ssl_ca", "ssl_cert", "ssl_key")
+        )
+        if not tls_configured:
+            return
+
+        host = str(config["host"])
+        original_host = str(config.get("original_host") or host)
+        if original_host != host:
+            connect_args["hostaddr"] = host
+            connect_args["host"] = original_host
+        if sslmode:
+            connect_args["sslmode"] = sslmode
+        elif config.get("ssl"):
+            connect_args["sslmode"] = "require"
+        for source, target in (
+            ("sslrootcert", "sslrootcert"),
+            ("ssl_ca", "sslrootcert"),
+            ("sslcert", "sslcert"),
+            ("ssl_cert", "sslcert"),
+            ("sslkey", "sslkey"),
+            ("ssl_key", "sslkey"),
+        ):
+            if config.get(source) and target not in connect_args:
+                connect_args[target] = config[source]
+
+    @staticmethod
+    def _mysql_tls_configured(config: dict) -> bool:
+        return any(
+            config.get(key)
+            for key in (
+                "ssl",
+                "ssl_ca",
+                "ssl_cert",
+                "ssl_key",
+                "ssl_verify_cert",
+                "ssl_verify_identity",
+            )
+        )
+
+    @staticmethod
+    def _copy_mysql_tls_options(config: dict, connect_args: dict) -> None:
+        for key in (
+            "ssl",
+            "ssl_ca",
+            "ssl_cert",
+            "ssl_key",
+            "ssl_verify_cert",
+            "ssl_verify_identity",
+        ):
+            if config.get(key) is not None:
+                connect_args[key] = config[key]
+
+    @staticmethod
+    def _json_value(value: Any) -> Any:
+        try:
+            json.dumps(value)
+        except (TypeError, ValueError, OverflowError):
+            return str(value)
+        return value
