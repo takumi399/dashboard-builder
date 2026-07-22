@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useRef } from 'react';
-import axios from 'axios';
 import { Button, Table, Upload, Input, Typography, Space, Popconfirm, Tag, App, Tabs, Select, InputNumber, Form, Card } from 'antd';
 import type { TableColumnsType, UploadFile } from 'antd';
 import { UploadOutlined, DeleteOutlined, ArrowLeftOutlined, DatabaseOutlined, FileTextOutlined } from '@ant-design/icons';
@@ -7,16 +6,9 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { dataSourceService } from '../services/dashboard';
 import type { DataSource } from '../services/dashboard';
+import { apiErrorMessage, isFormValidationError } from '../utils/apiErrors';
 
 const { Title } = Typography;
-
-const apiErrorMessage = (error: unknown, fallback: string) => {
-  if (!axios.isAxiosError<{ detail?: string }>(error)) return fallback;
-  return error.response?.data?.detail || fallback;
-};
-
-const isFormValidationError = (error: unknown): error is { errorFields: unknown[] } =>
-  typeof error === 'object' && error !== null && 'errorFields' in error;
 
 const DataSourcePage: React.FC = () => {
   const { message } = App.useApp();

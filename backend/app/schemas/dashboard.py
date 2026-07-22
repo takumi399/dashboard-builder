@@ -1,12 +1,15 @@
 from pydantic import BaseModel, field_validator, model_validator
-from typing import Optional, List
+from typing import Literal, Optional, List
 from datetime import datetime
 
 from app.core.security import contains_html
 
 
+ChartType = Literal['bar', 'line', 'pie', 'scatter', 'heatmap', 'radar', 'funnel', 'card', 'table']
+
+
 class ChartCreate(BaseModel):
-    chart_type: str
+    chart_type: ChartType
     title: str = "Untitled Chart"
 
     @field_validator('title')
@@ -28,7 +31,7 @@ class ChartCreate(BaseModel):
 
 class ChartUpdate(BaseModel):
     title: Optional[str] = None
-    chart_type: Optional[str] = None
+    chart_type: Optional[ChartType] = None
     position_x: Optional[float] = None
     position_y: Optional[float] = None
     width: Optional[float] = None
@@ -41,7 +44,7 @@ class ChartUpdate(BaseModel):
 class ChartResponse(BaseModel):
     id: int
     dashboard_id: int
-    chart_type: str
+    chart_type: ChartType
     title: str
     position_x: float
     position_y: float

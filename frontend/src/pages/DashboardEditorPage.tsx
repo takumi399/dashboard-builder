@@ -15,6 +15,8 @@ import type { WsMessage } from '../hooks/useWebSocket';
 import { useAuthStore } from '../store/authStore';
 import { dashboardService, chartService, dataSourceService } from '../services/dashboard';
 import type { ChartData, ChartType, Dashboard, DataSource, DataSourceData, SQLExecuteResult, Member } from '../services/dashboard';
+import { chartPropertyPatch } from '../utils/chartProperties';
+import type { ChartPropertyUpdate } from '../utils/chartProperties';
 
 const { Title, Text } = Typography;
 
@@ -287,12 +289,16 @@ const DashboardEditorPage: React.FC = () => {
     finally { setSaving(false); }
   };
 
-  const handleChartPropertyUpdate = async (field: keyof ChartItem, value: unknown) => {
+  const handleChartPropertyUpdate = async (...update: ChartPropertyUpdate) => {
     if (!selectedChart) return;
-    const updated = { ...selectedChart, [field]: value } as ChartItem;
+    const patch = chartPropertyPatch(...update);
+    if (!patch) return;
+
+    const [field, value] = update;
+    const updated = { ...selectedChart, ...patch };
     setSelectedChart(updated);
     setCharts(prev => prev.map(c => c.id === updated.id ? updated : c));
-    try { await chartService.update(updated.id, { [field]: value } as Partial<ChartItem>); } catch {}
+    try { await chartService.update(updated.id, patch); } catch {}
     sendOperation({ type: 'chart_updated', chart_id: updated.id, field, value });
 
     // 切换数据源时立即加载数据

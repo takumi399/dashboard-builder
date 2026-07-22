@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import axios from 'axios';
 import { Select, Button, Table, Typography, Space, App, Card, Tag, Empty } from 'antd';
 import { PlayCircleOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import Editor from '@monaco-editor/react';
 import { dataSourceService } from '../services/dashboard';
 import type { SQLExecuteResult } from '../services/dashboard';
 import type { DataSource } from '../services/dashboard';
+import { apiErrorMessage } from '../utils/apiErrors';
 
 const { Text } = Typography;
 
@@ -52,10 +52,7 @@ const SqlQueryEditor: React.FC<Props> = ({ onApplyToChart }) => {
       message.success(`查询成功，返回 ${res.row_count} 行`);
     } catch (err: unknown) {
       setResult(null);
-      const detail = axios.isAxiosError<{ detail?: string }>(err)
-        ? err.response?.data?.detail
-        : undefined;
-      message.error(detail || '查询执行失败');
+      message.error(apiErrorMessage(err, '查询执行失败'));
     }
     finally {
       setExecuting(false);
