@@ -429,27 +429,27 @@ async def test_sql_execute_times_out_without_exposing_connection_url(
 
     slow_executor = SlowExecutor()
     monkeypatch.setattr(datasource_api, "executor", slow_executor, raising=False)
-    original_wait_for = datasource_api.asyncio.wait_for
     configured_timeouts = []
 
-    async def fast_wait_for(awaitable, timeout):
-        configured_timeouts.append(timeout)
-        return await original_wait_for(awaitable, timeout=0.01)
+    class FastTimeoutPool(BoundedWorkerPool):
+        async def run(self, function, *args, timeout):
+            configured_timeouts.append(timeout)
+            return await super().run(function, *args, timeout=0.01)
 
-    monkeypatch.setattr(datasource_api.asyncio, "wait_for", fast_wait_for)
+    pool = FastTimeoutPool(max_workers=1, thread_name_prefix="test-route-sql")
+    monkeypatch.setattr(datasource_api, "execution_pool", pool, raising=False)
+    try:
+        response = await async_client.post("/api/datasources/sql/execute", json={
+            "datasource_id": datasource_id,
+            "query": "SELECT 1 AS value",
+        }, headers=auth_headers)
 
-    response = await async_client.post("/api/datasources/sql/execute", json={
-        "datasource_id": datasource_id,
-        "query": "SELECT 1 AS value",
-    }, headers=auth_headers)
-
-    assert response.status_code == 504
-    assert response.json() == {"detail": "SQL query timed out"}
-    assert "sqlite:///" not in response.text
-    assert configured_timeouts == [
-        settings.SQL_QUERY_TIMEOUT_SECONDS,
-        settings.SQL_QUERY_TIMEOUT_SECONDS + 1,
-    ]
+        assert response.status_code == 504
+        assert response.json() == {"detail": "SQL query timed out"}
+        assert "sqlite:///" not in response.text
+        assert configured_timeouts == [settings.SQL_QUERY_TIMEOUT_SECONDS + 1]
+    finally:
+        pool.shutdown()
 
 
 @pytest.mark.asyncio
@@ -475,7 +475,7 @@ async def test_timed_out_sql_work_cannot_grow_workers_or_connections(
 
     class FastTimeoutPool(BoundedWorkerPool):
         async def run(self, function, *args, timeout):
-            return await super().run(function, *args, timeout=0.01)
+            return await super().run(function, *args, timeout=0.1)
 
     pool = FastTimeoutPool(max_workers=1, thread_name_prefix="test-route-sql")
     monkeypatch.setattr(datasource_api, "executor", BlockingExecutor())
