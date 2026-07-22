@@ -1,103 +1,54 @@
-# Architecture Document — Dashboard Builder
+# Dashboard Builder Architecture
 
 ## Overview
 
-Dashboard Builder is a single-page application (SPA) with a RESTful API backend. The frontend communicates with the backend exclusively via HTTP/JSON.
+Dashboard Builder is a React single-page application backed by a FastAPI HTTP and WebSocket service. The application database uses SQLAlchemy's asynchronous APIs. SQLite is the local default, while the production Compose stack uses PostgreSQL.
 
-## System Diagram
-
-```
-┌──────────────┐       HTTP/JSON       ┌──────────────┐       SQL        ┌──────────┐
-│   Browser    │ ────────────────────→  │    FastAPI   │ ──────────────→  │  SQLite  │
-│  (React SPA) │ ←──────────────────── │   (Python)   │ ←────────────── │   (Dev)  │
-└──────────────┘       Port 8000       └──────────────┘                  └──────────┘
-     Port 3000                               │
-        │                                    │ File Upload (CSV)
-        │                                    ▼
-        │                            ┌──────────────┐
-        │                            │  Parsed JSON  │
-        │                            │   in DB Text  │
-        │                            └──────────────┘
-        │
-        ▼
-┌──────────────┐
-│  Vite Proxy  │  /api → localhost:8000
-└──────────────┘
+```text
+Browser (React)
+  |-- HTTP/JSON /api --> FastAPI --> application database
+  |-- WebSocket /ws --> collaboration rooms
+  `-- chart data <---- CSV storage or bounded read-only SQL executor
 ```
 
-## Data Flow
+## Main Flows
 
-### Dashboard Creation Flow
-1. User creates dashboard → POST /api/dashboards → INSERT into dashboards table
-2. User drags chart from palette → POST /api/dashboards/:id/charts → INSERT into charts table
-3. User uploads CSV → POST /api/datasources/upload → Parse CSV → Store as JSON in raw_data
-4. User binds data source to chart → PUT /api/charts/:id with data_source_id
-5. Frontend fetches data via GET /api/datasources/:id/data → Renders chart with ECharts
-6. User publishes → POST /api/dashboards/:id/publish → Generates share_token
+1. Authenticated users create dashboards and add positioned chart records.
+2. CSV uploads are parsed and stored as JSON, or SQL connection configuration is encrypted before persistence.
+3. Charts bind to data sources and map returned columns through `query_config`.
+4. Publishing creates a share token for dashboard and chart definitions; fetching bound data still requires the authenticated data-source owner.
+5. Authenticated sessions exchange chart operations over a dashboard WebSocket room. The current frontend client uses backend port `8000` directly, so production proxy routing is not yet wired for collaboration.
 
-### Public View Flow
-1. Visitor opens /view/:token
-2. Frontend calls GET /api/public/dashboards/:token (no auth required)
-3. Returns dashboard + charts with positions
-4. For each chart with data_source_id, fetch data via GET /api/datasources/:id/data
-5. Render charts at absolute positions using ECharts
+## SQL Data-Source Boundary
 
-## Database Schema
+SQL access is split across focused components:
 
-```
-users
-├── id (PK)
-├── username (UNIQUE)
-├── email (UNIQUE)
-├── password_hash
-└── created_at
+- Pydantic schemas accept driver-specific, structured connection settings.
+- `CredentialCipher` encrypts persisted settings and creates redacted public representations.
+- `SQLPolicy` parses a single read-only statement, confines SQLite paths, resolves network hosts once, and rejects unsafe targets.
+- `SQLExecutor` uses SQLAlchemy URL objects, read-only driver settings, pinned validated addresses where supported, timeouts, and bounded fetches.
+- The API converts policy failures, timeouts, and driver failures into sanitized responses.
 
-dashboards
-├── id (PK)
-├── user_id (FK → users)
-├── name
-├── description
-├── is_published
-├── share_token (UNIQUE)
-├── created_at
-└── updated_at
+Production Compose requires `POSTGRES_PASSWORD`, `DATABASE_URL`, `SECRET_KEY`, and `DATASOURCE_ENCRYPTION_KEY` from the environment. `SQL_ALLOWED_HOSTS` is a comma-separated exception list for private or loopback destinations. `SQL_QUERY_TIMEOUT_SECONDS`, `SQL_MAX_ROWS`, and `SQLITE_DATA_DIR` bound execution. Database credentials must independently have read-only permissions.
 
-charts
-├── id (PK)
-├── dashboard_id (FK → dashboards, CASCADE)
-├── chart_type (bar|line|pie)
-├── title
-├── position_x, position_y, width, height
-├── data_source_id (FK → data_sources, SET NULL)
-├── config_json (ECharts option overrides)
-├── query_config (column mapping)
-└── sort_order
+## Persistence
 
-data_sources
-├── id (PK)
-├── user_id (FK → users)
-├── name
-├── source_type (csv)
-├── config_json (filename, columns, row_count)
-├── raw_data (parsed CSV as JSON)
-└── created_at
-```
+- `users`: identities and password hashes.
+- `dashboards`: owner, metadata, publication state, and share token.
+- `dashboard_members`: role-based dashboard access.
+- `charts`: visualization type, layout, data-source binding, and configuration.
+- `data_sources`: CSV data or encrypted SQL connection configuration.
 
-## Security
+## Security Model
 
-- All passwords hashed with bcrypt via passlib
-- JWT tokens with configurable expiration (default 60 min)
-- Token-based auth for all dashboard/data source endpoints
-- Public dashboard view does NOT require auth
-- CORS restricted to localhost:3000
-- SQLAlchemy parameterized queries prevent SQL injection
+- Passwords are hashed with passlib/bcrypt and authenticated requests use JWTs.
+- Dashboard and data-source routes enforce ownership or membership checks.
+- Public dashboard reads require an unguessable share token.
+- SQL passwords and private TLS key material never appear in API response schemas.
+- SQL text is parser-validated rather than checked with string prefixes.
+- Result size and execution time are bounded; low-level database errors are not exposed.
+- Production secrets and SQL policy limits are environment controlled; local CORS permits `http://localhost:3000`.
 
-## Key Design Decisions
+## Verification
 
-| Decision | Rationale |
-|----------|-----------|
-| Async SQLAlchemy | Non-blocking DB ops, future-proof for high concurrency |
-| JSON in TEXT columns | Flexible schema for chart configs and CSV data without migrations |
-| Absolute positioning for charts | Simple, predictable, maps 1:1 to drag-drop UX |
-| Vite proxy for dev | Avoids CORS issues in development, single origin in production |
-| Zustand for auth state | Minimal, no boilerplate, perfect for simple global state |
+Backend tests cover authentication, authorization, collaboration, models, data sources, credential encryption, SQL policy, and SQL execution. Frontend CI runs Oxlint and a production TypeScript/Vite build independently of the backend job.

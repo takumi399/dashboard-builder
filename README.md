@@ -1,139 +1,94 @@
-# Dashboard Builder — Low-Code Data Dashboard Platform
+# Dashboard Builder
 
-[![GitHub](https://img.shields.io/badge/GitHub-dashboard--builder-181717?logo=github)](https://github.com/your-org/dashboard-builder)
-[![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
+[![GitHub](https://img.shields.io/badge/GitHub-dashboard--builder-181717?logo=github)](https://github.com/takumi399/dashboard-builder)
 
-A full-stack low-code dashboard builder where users can drag-and-drop chart components onto a canvas, bind data sources, and publish interactive dashboards.
+A full-stack dashboard builder for creating, arranging, publishing, and collaboratively editing data visualizations.
 
 ## Features
 
-- [x] **Drag-and-Drop Editor** — Drag bar, line, and pie charts onto a canvas. Move and resize freely with react-rnd.
-- [x] **Chart Rendering** — ECharts 5-powered interactive charts (bar, line, pie) with configurable options.
-- [x] **Data Source Management** — Upload CSV files and bind them to charts with column mapping.
-- [x] **JWT Authentication** — Secure user registration and login with bcrypt password hashing.
-- [x] **Dashboard Publishing** — One-click publish with shareable public links (no auth required).
-- [x] **Responsive UI** — Built with Ant Design 5 for a polished enterprise look.
-- [x] **Vite Dev Proxy** — `/api` requests proxied to backend, avoiding CORS issues in development.
-- [ ] **Multi-tenant Workspaces** — Organization-scoped dashboards and data sources.
-- [ ] **Real-time Collaboration** — WebSocket-based live editing with multiple users.
-- [ ] **Advanced Chart Types** — Scatter, heatmap, funnel, and custom ECharts options.
-- [ ] **PostgreSQL Production** — Swap SQLite for PostgreSQL with zero code changes.
-
-## Architecture
-
-[View Architecture Diagram](docs/architecture.html)
+- Drag, resize, and configure bar, line, pie, scatter, heatmap, radar, funnel, and table visualizations.
+- Upload CSV data or connect read-only SQLite, MySQL, and PostgreSQL data sources.
+- Encrypt stored SQL passwords and private TLS key material, and omit them from API responses.
+- Validate SQL as a single read-only statement, constrain connection targets, cap result rows, and enforce timeouts.
+- Authenticate with JWT, publish dashboard definitions through share tokens, and collaborate over WebSockets in local development.
+- Run with SQLite for local development or PostgreSQL through the production Compose configuration.
 
 ## Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
-| Frontend | React 18 + TypeScript + Vite + Ant Design 5 + ECharts 5 + react-rnd |
-| Backend | Python 3.11 + FastAPI + SQLAlchemy 2.0 (async) + Pydantic v2 |
-| Database | SQLite (swap to PostgreSQL via SQLAlchemy) |
-| Auth | JWT (python-jose) + bcrypt (passlib) |
-| State | Zustand |
-| Build | Vite + TypeScript strict mode + Oxlint |
+| --- | --- |
+| Frontend | React 19, TypeScript 6, Vite 8, Ant Design 6, ECharts 6, Zustand |
+| Backend | Python 3.11, FastAPI 0.115, SQLAlchemy 2.0, Pydantic 2 |
+| Storage | SQLite for local development; PostgreSQL in production Compose |
+| Quality | Pytest, Oxlint, TypeScript, GitHub Actions |
 
 ## Quick Start
 
-### Prerequisites
-- Python 3.11+
-- Node.js 20+
-- (Optional) Docker
-
-### Backend
+Prerequisites: Python 3.11+, Node.js 22+, and optionally Docker.
 
 ```bash
 cd backend
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Backend runs at http://localhost:8000
-
-### Frontend
+In another terminal:
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
-Frontend runs at http://localhost:3000
+The API runs at `http://localhost:8000` and the frontend at `http://localhost:3000`.
 
-### Docker (Full Stack)
+To run the local stack with Docker:
 
 ```bash
-docker-compose up
+docker compose up --build
 ```
 
-## API Endpoints
+## Secure SQL Data Sources
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | /api/auth/register | Register new user |
-| POST | /api/auth/login | Login |
-| GET | /api/auth/me | Get current user |
-| GET | /api/dashboards | List user dashboards |
-| POST | /api/dashboards | Create dashboard |
-| GET | /api/dashboards/:id | Get dashboard with charts |
-| PUT | /api/dashboards/:id | Update dashboard |
-| DELETE | /api/dashboards/:id | Delete dashboard |
-| POST | /api/dashboards/:id/publish | Publish dashboard |
-| GET | /api/dashboards/:id/charts | List charts |
-| POST | /api/dashboards/:id/charts | Add chart |
-| PUT | /api/dashboards/charts/:id | Update chart |
-| DELETE | /api/dashboards/charts/:id | Delete chart |
-| POST | /api/datasources/upload | Upload CSV |
-| GET | /api/datasources | List data sources |
-| GET | /api/datasources/:id/data | Get data source content |
-| GET | /api/public/dashboards/:token | Public dashboard view |
+The backend uses these environment variables:
 
-## Screenshots
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `DATASOURCE_ENCRYPTION_KEY` | Fernet key used to encrypt stored SQL connection configuration | Development only; required when `DEBUG=False` |
+| `POSTGRES_PASSWORD` | Password used to initialize the production PostgreSQL service | Required in production |
+| `DATABASE_URL` | Async SQLAlchemy URL for the production application database | Required in production |
+| `SECRET_KEY` | Secret used to sign application JWTs | Required in production |
+| `SQL_ALLOWED_HOSTS` | Comma-separated hostnames allowed to resolve to private or loopback addresses | Empty |
+| `SQL_QUERY_TIMEOUT_SECONDS` | Query timeout, from 1 to 60 seconds | `10` |
+| `SQL_MAX_ROWS` | Maximum returned rows, from 1 to 10,000 | `1000` |
+| `SQLITE_DATA_DIR` | Directory that contains allowed SQLite files | `./data` |
 
-<!-- TODO: Add screenshots -->
-| Login | Dashboard List | Editor |
-|-------|---------------|--------|
-| ![login](screenshots/login.png) | ![list](screenshots/list.png) | ![editor](screenshots/editor.png) |
+Generate a production encryption key with:
 
-## Project Structure
-
-```
-task/
-├── frontend/              # React + TypeScript (Vite)
-│   └── src/
-│       ├── components/
-│       │   └── charts/    # ChartRenderer — ECharts wrapper
-│       ├── pages/          # Login, Register, DashboardList, Editor, View, DataSource
-│       ├── services/       # API clients (axios)
-│       ├── store/          # Zustand auth store
-│       └── types/          # TypeScript interfaces
-├── backend/               # FastAPI
-│   └── app/
-│       ├── api/            # Route handlers (auth, dashboards, datasources, public)
-│       ├── core/           # Config, database, security
-│       ├── models/         # SQLAlchemy ORM models
-│       └── schemas/        # Pydantic request/response schemas
-├── docker-compose.yml
-└── CLAUDE.md
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-## Architecture Decision Records
+Set all required production variables before starting the production stack. `DATABASE_URL` must use the same PostgreSQL password, with reserved URL characters percent-encoded:
 
-- **SQLite for dev, PostgreSQL-ready**: SQLAlchemy makes swapping trivial. SQLite is zero-config for local dev.
-- **Async database ops**: All endpoints use async/await for non-blocking I/O.
-- **Zustand over Redux**: Minimal boilerplate. Auth state is simple — Zustand fits perfectly.
-- **Model validation with Pydantic v2**: Automatic request validation and response serialization from ORM models.
-- **react-rnd for drag-and-drop**: Replaced @dnd-kit for canvas interactions. Provides native drag, resize, and absolute positioning out of the box.
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+```
 
-## 生产部署
+The application validates read-only SQL and restricts network/file targets, but the configured database account must also have read-only permissions. Do not reuse the development key in production.
 
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+Share-token views expose dashboard and chart definitions, but fetching bound data currently requires an authenticated data-source owner. The frontend WebSocket client currently connects directly to backend port `8000`; production deployments must update that client routing before enabling collaboration through the Nginx proxy.
 
-打开浏览器访问 http://localhost 即可使用。
+## Quality Checks
 
-数据库默认密码请修改 docker-compose.prod.yml 中的 POSTGRES_PASSWORD。
+```bash
+cd backend
+python -m pytest tests/ -v
 
-## License
+cd ../frontend
+npm ci
+npm run lint
+npm run build
+```
 
-MIT
+Architecture details are documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
