@@ -34,7 +34,10 @@ class SQLPolicy:
         exp.Revoke,
         exp.Command,
     )
-    _METADATA_ADDRESS = ipaddress.ip_address("169.254.169.254")
+    _METADATA_ADDRESSES = {
+        ipaddress.ip_address("169.254.169.254"),
+        ipaddress.ip_address("100.100.100.200"),
+    }
 
     def __init__(
         self,
@@ -147,11 +150,13 @@ class SQLPolicy:
 
     def _validate_address(self, address, explicitly_allowed: bool) -> None:
         if (
-            address == self._METADATA_ADDRESS
+            address in self._METADATA_ADDRESSES
             or address.is_unspecified
             or address.is_multicast
             or address.is_link_local
         ):
             raise SQLPolicyError("Host address is not allowed")
         if (address.is_private or address.is_loopback) and not explicitly_allowed:
+            raise SQLPolicyError("Host address is not allowed")
+        if not address.is_global and not explicitly_allowed:
             raise SQLPolicyError("Host address is not allowed")

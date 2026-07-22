@@ -24,6 +24,7 @@ def policy(tmp_path: Path):
             "public.example": ["8.8.8.8"],
             "private.example": ["10.0.0.5"],
             "mixed.example": ["10.0.0.5", "8.8.8.8"],
+            "metadata.example": ["100.100.100.200"],
             "docker": ["172.18.0.2"],
             "localhost": ["127.0.0.1"],
         }
@@ -75,12 +76,19 @@ def test_validate_host_rejects_empty_host(policy):
         policy.validate_host("  ")
 
 
-@pytest.mark.parametrize("host", ["169.254.169.254", "224.0.0.1", "fe80::1"])
+@pytest.mark.parametrize(
+    "host", ["169.254.169.254", "100.100.100.200", "224.0.0.1", "fe80::1"]
+)
 def test_validate_host_rejects_unsafe_addresses(policy, host):
     direct = SQLPolicy({host}, Path("."), resolver=lambda *_args, **_kwargs: [])
 
     with pytest.raises(SQLPolicyError, match="not allowed"):
         direct.validate_host(host)
+
+
+def test_validate_host_rejects_resolved_metadata_address(policy):
+    with pytest.raises(SQLPolicyError, match="not allowed"):
+        policy.validate_host("metadata.example")
 
 
 def test_validate_host_rejects_ipv4_mapped_metadata_address(tmp_path):

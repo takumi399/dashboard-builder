@@ -66,13 +66,13 @@ class SQLExecutor:
 
     _POSTGRES_TLS_FIELDS = {"sslmode", "sslrootcert", "sslcert", "sslkey"}
     _MYSQL_TLS_FIELDS = {
-        "ssl",
         "ssl_ca",
         "ssl_cert",
         "ssl_key",
         "ssl_verify_cert",
         "ssl_verify_identity",
     }
+    _UNSUPPORTED_TLS_FIELDS = {"ssl"}
 
     def execute(self, config: dict, query: str) -> dict:
         timeout_seconds = settings.SQL_QUERY_TIMEOUT_SECONDS
@@ -158,6 +158,10 @@ class SQLExecutor:
                 "connect_args": connect_args
             }
         if db_type == "mysql":
+            if config.get("ssl_verify_identity") and not config.get("ssl_ca"):
+                raise ValueError(
+                    "ssl_ca is required when ssl_verify_identity is enabled"
+                )
             if self._mysql_tls_configured(config):
                 original_host = str(config.get("original_host") or host)
                 if original_host != host:
@@ -194,6 +198,8 @@ class SQLExecutor:
     @staticmethod
     def _configure_postgresql_tls(config: dict, connect_args: dict) -> None:
         sslmode = config.get("sslmode")
+        if sslmode:
+            connect_args["sslmode"] = sslmode
         tls_configured = bool(
             sslmode and str(sslmode).lower() != "disable"
         ) or any(
@@ -208,8 +214,6 @@ class SQLExecutor:
         if original_host != host:
             connect_args["hostaddr"] = host
             connect_args["host"] = original_host
-        if sslmode:
-            connect_args["sslmode"] = sslmode
         for source, target in (
             ("sslrootcert", "sslrootcert"),
             ("sslcert", "sslcert"),
@@ -223,7 +227,6 @@ class SQLExecutor:
         return any(
             config.get(key)
             for key in (
-                "ssl",
                 "ssl_ca",
                 "ssl_cert",
                 "ssl_key",
@@ -235,7 +238,6 @@ class SQLExecutor:
     @staticmethod
     def _copy_mysql_tls_options(config: dict, connect_args: dict) -> None:
         for key in (
-            "ssl",
             "ssl_ca",
             "ssl_cert",
             "ssl_key",
@@ -249,7 +251,11 @@ class SQLExecutor:
     def _validate_tls_options(cls, config: dict, db_type: str) -> None:
         configured = {
             field
-            for field in cls._POSTGRES_TLS_FIELDS | cls._MYSQL_TLS_FIELDS
+            for field in (
+                cls._POSTGRES_TLS_FIELDS
+                | cls._MYSQL_TLS_FIELDS
+                | cls._UNSUPPORTED_TLS_FIELDS
+            )
             if config.get(field) is not None
         }
         allowed = (

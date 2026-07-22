@@ -37,7 +37,6 @@ class SQLConnectionConfig(BaseModel):
     sslrootcert: Optional[str] = None
     sslcert: Optional[str] = None
     sslkey: Optional[str] = Field(default=None, repr=False)
-    ssl: Optional[bool | dict[str, object]] = Field(default=None, repr=False)
     ssl_ca: Optional[str] = None
     ssl_cert: Optional[str] = None
     ssl_key: Optional[str] = Field(default=None, repr=False)
@@ -50,7 +49,6 @@ class SQLConnectionConfig(BaseModel):
     def validate_driver_tls_options(self):
         postgres_tls = {"sslmode", "sslrootcert", "sslcert", "sslkey"}
         mysql_tls = {
-            "ssl",
             "ssl_ca",
             "ssl_cert",
             "ssl_key",
@@ -71,6 +69,8 @@ class SQLConnectionConfig(BaseModel):
         if unsupported:
             fields = ", ".join(unsupported)
             raise ValueError(f"TLS options {fields} are not valid for {self.db_type}")
+        if self.db_type == "mysql" and self.ssl_verify_identity and not self.ssl_ca:
+            raise ValueError("ssl_ca is required when ssl_verify_identity is enabled")
         return self
 
 

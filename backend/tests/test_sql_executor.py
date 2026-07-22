@@ -276,6 +276,31 @@ def test_postgresql_tls_uses_hostaddr_for_pinned_ip_and_original_host_for_identi
     assert kwargs["connect_args"]["sslmode"] == "verify-full"
 
 
+def test_postgresql_sslmode_disable_is_passed_to_driver(monkeypatch):
+    calls = []
+    engine = _FakeEngine()
+    monkeypatch.setattr(
+        sql_executor,
+        "create_engine",
+        lambda url, **kwargs: calls.append((url, kwargs)) or engine,
+        raising=False,
+    )
+
+    SQLExecutor().execute(
+        {
+            "db_type": "postgresql",
+            "host": "203.0.113.9",
+            "original_host": "database.example",
+            "database": "analytics",
+            "sslmode": "disable",
+        },
+        "SELECT 1 AS value",
+    )
+
+    _, kwargs = calls[0]
+    assert kwargs["connect_args"]["sslmode"] == "disable"
+
+
 def test_mysql_engine_is_read_only_and_has_driver_timeouts(monkeypatch):
     calls = []
     engine = _FakeEngine()

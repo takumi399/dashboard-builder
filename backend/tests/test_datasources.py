@@ -245,7 +245,6 @@ def test_sql_connection_schema_preserves_typed_tls_options_and_rejects_typos():
         "db_type": "mysql",
         "host": "mysql.example",
         "database": "analytics",
-        "ssl": True,
         "ssl_ca": "mysql-ca.pem",
         "ssl_cert": "mysql-cert.pem",
         "ssl_key": "mysql-key.pem",
@@ -255,8 +254,14 @@ def test_sql_connection_schema_preserves_typed_tls_options_and_rejects_typos():
 
     assert postgresql.model_dump(exclude_none=True)["sslmode"] == "verify-full"
     assert postgresql.model_dump(exclude_none=True)["sslrootcert"] == "root-ca.pem"
-    assert mysql.model_dump(exclude_none=True)["ssl"] is True
+    assert mysql.model_dump(exclude_none=True)["ssl_ca"] == "mysql-ca.pem"
     assert mysql.model_dump(exclude_none=True)["ssl_verify_identity"] is True
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        SQLConnectionConfig.model_validate({
+            "db_type": "mysql",
+            "database": "analytics",
+            "ssl": {"ssl_mod": "verify-full"},
+        })
     with pytest.raises(ValidationError, match="not valid for mysql"):
         SQLConnectionConfig.model_validate({
             "db_type": "mysql",
@@ -266,6 +271,12 @@ def test_sql_connection_schema_preserves_typed_tls_options_and_rejects_typos():
     with pytest.raises(ValidationError, match="not valid for postgresql"):
         SQLConnectionConfig.model_validate({
             "db_type": "postgresql",
+            "database": "analytics",
+            "ssl_verify_identity": True,
+        })
+    with pytest.raises(ValidationError, match="ssl_ca is required"):
+        SQLConnectionConfig.model_validate({
+            "db_type": "mysql",
             "database": "analytics",
             "ssl_verify_identity": True,
         })
