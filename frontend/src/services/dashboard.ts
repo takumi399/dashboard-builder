@@ -1,14 +1,16 @@
 import api from './api';
 
-interface Dashboard {
+export type ChartType = 'bar' | 'line' | 'pie' | 'scatter' | 'heatmap' | 'radar' | 'funnel' | 'card' | 'table';
+
+export interface Dashboard {
   id: number; name: string; description: string; is_published: boolean;
   share_token: string | null; created_at: string; updated_at: string; charts: Chart[];
   chart_count?: number;
   role?: string;  // RBAC: "owner" | "editor" | "viewer"
 }
 
-interface Chart {
-  id: number; dashboard_id: number; chart_type: string; title: string;
+export interface Chart {
+  id: number; dashboard_id: number; chart_type: ChartType; title: string;
   position_x: number; position_y: number; width: number; height: number;
   data_source_id: number | null; config_json: string; query_config: string; sort_order: number;
 }
@@ -71,16 +73,37 @@ export interface DataSource {
 
 export interface SQLExecuteResult {
   columns: string[];
-  rows: Record<string, any>[];
+  rows: DataRow[];
   row_count: number;
+  truncated: boolean;
 }
+
+export type DataValue =
+  | string
+  | number
+  | boolean
+  | null
+  | DataValue[]
+  | { [key: string]: DataValue };
+export type DataRow = Record<string, DataValue>;
+
+export interface DataSourceData {
+  id: number;
+  name: string;
+  columns: string[];
+  rows: DataRow[];
+  row_count: number;
+  total: number;
+}
+
+export type ChartData = Pick<DataSourceData, 'columns' | 'rows'>;
 
 export const dataSourceService = {
   list: () => api.get<DataSource[]>('/datasources').then(r => r.data),
   create: (data: { name: string; source_type: 'csv' | 'sql'; connection_config?: SQLConnectionConfig; config_json?: string; raw_data?: string }) =>
     api.post<DataSource>('/datasources', data).then(r => r.data),
-  upload: (name: string, file: File) => { const fd = new FormData(); fd.append('file', file); return api.post(`/datasources/upload?name=${encodeURIComponent(name)}`, fd).then(r => r.data); },
-  getData: (id: number) => api.get<any>(`/datasources/${id}/data`).then(r => r.data),
+  upload: (name: string, file: File) => { const fd = new FormData(); fd.append('file', file); return api.post<DataSource>(`/datasources/upload?name=${encodeURIComponent(name)}`, fd).then(r => r.data); },
+  getData: (id: number) => api.get<DataSourceData>(`/datasources/${id}/data`).then(r => r.data),
   executeSql: (datasourceId: number, query: string) =>
     api.post<SQLExecuteResult>('/datasources/sql/execute', { datasource_id: datasourceId, query }).then(r => r.data),
   delete: (id: number) => api.delete(`/datasources/${id}`),

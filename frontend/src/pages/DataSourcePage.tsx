@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
+import axios from 'axios';
 import { Button, Table, Upload, Input, Typography, Space, Popconfirm, Tag, App, Tabs, Select, InputNumber, Form, Card } from 'antd';
+import type { TableColumnsType, UploadFile } from 'antd';
 import { UploadOutlined, DeleteOutlined, ArrowLeftOutlined, DatabaseOutlined, FileTextOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
@@ -7,6 +9,14 @@ import { dataSourceService } from '../services/dashboard';
 import type { DataSource } from '../services/dashboard';
 
 const { Title } = Typography;
+
+const apiErrorMessage = (error: unknown, fallback: string) => {
+  if (!axios.isAxiosError<{ detail?: string }>(error)) return fallback;
+  return error.response?.data?.detail || fallback;
+};
+
+const isFormValidationError = (error: unknown): error is { errorFields: unknown[] } =>
+  typeof error === 'object' && error !== null && 'errorFields' in error;
 
 const DataSourcePage: React.FC = () => {
   const { message } = App.useApp();
@@ -32,7 +42,7 @@ const DataSourcePage: React.FC = () => {
       return;
     }
     fetchSources();
-  }, []);
+  }, [navigate]);
 
   const handleUpload = async () => {
     if (!name.trim() || !fileRef.current) return;
@@ -42,7 +52,7 @@ const DataSourcePage: React.FC = () => {
       message.success('上传成功');
       setName(''); fileRef.current = null;
       fetchSources();
-    } catch (err: any) { message.error(err.response?.data?.detail || '上传失败'); }
+    } catch (err: unknown) { message.error(apiErrorMessage(err, '上传失败')); }
     finally { setUploading(false); }
   };
 
@@ -66,9 +76,9 @@ const DataSourcePage: React.FC = () => {
       message.success('数据库连接已添加');
       sqlForm.resetFields();
       fetchSources();
-    } catch (err: any) {
-      if (err.errorFields) return; // 表单校验错误，不提示
-      message.error(err.response?.data?.detail || '添加失败');
+    } catch (err: unknown) {
+      if (isFormValidationError(err)) return; // 表单校验错误，不提示
+      message.error(apiErrorMessage(err, '添加失败'));
     }
     finally { setSubmittingSql(false); }
   };
@@ -78,15 +88,19 @@ const DataSourcePage: React.FC = () => {
     catch { message.error('删除失败'); }
   };
 
-  const columns = [
+  const columns: TableColumnsType<DataSource> = [
     { title: '名称', dataIndex: 'name', key: 'name' },
     { title: '类型', dataIndex: 'source_type', key: 'type', render: (t: string) => <Tag color={t === 'sql' ? 'blue' : 'green'}>{t.toUpperCase()}</Tag> },
     { title: '创建时间', dataIndex: 'created_at', key: 'created', render: (d: string) => new Date(d).toLocaleDateString() },
-    { title: '操作', key: 'actions', render: (_: any, record: any) => (
+    { title: '操作', key: 'actions', render: (_: unknown, record: DataSource) => (
       <Space><Button size="small" onClick={() => message.info(`ID：${record.id}`)}>查看</Button>
       <Popconfirm title="确定删除？" onConfirm={() => handleDelete(record.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm></Space>
     )},
   ];
+
+  const uploadFileList: UploadFile[] = fileRef.current
+    ? [{ uid: '-1', name: fileRef.current.name, status: 'done' }]
+    : [];
 
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto', padding: 24 }}>
@@ -119,7 +133,7 @@ const DataSourcePage: React.FC = () => {
                             beforeUpload={file => { fileRef.current = file; return false; }}
                             maxCount={1}
                             accept=".csv"
-                            fileList={fileRef.current ? [{ uid: '-1', name: fileRef.current.name, status: 'done' } as any] : []}
+                            fileList={uploadFileList}
                             onRemove={() => { fileRef.current = null; }}
                           >
                             <Button icon={<UploadOutlined />}>选择CSV文件</Button>

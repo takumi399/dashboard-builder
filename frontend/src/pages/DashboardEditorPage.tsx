@@ -14,18 +14,18 @@ import { useWebSocket } from '../hooks/useWebSocket';
 import type { WsMessage } from '../hooks/useWebSocket';
 import { useAuthStore } from '../store/authStore';
 import { dashboardService, chartService, dataSourceService } from '../services/dashboard';
-import type { SQLExecuteResult, Member } from '../services/dashboard';
+import type { ChartData, ChartType, Dashboard, DataSource, DataSourceData, SQLExecuteResult, Member } from '../services/dashboard';
 
 const { Title, Text } = Typography;
 
 interface ChartItem {
-  id: number; dashboard_id: number; chart_type: string; title: string;
+  id: number; dashboard_id: number; chart_type: ChartType; title: string;
   position_x: number; position_y: number; width: number; height: number;
   data_source_id: number | null; config_json: string; query_config: string; sort_order: number;
 }
 
 // 所有可用图表类型及其图标和标签
-const CHART_TYPES: { type: string; icon: React.ReactNode; label: string }[] = [
+const CHART_TYPES: { type: ChartType; icon: React.ReactNode; label: string }[] = [
   { type: 'bar', icon: <BarChartOutlined />, label: '柱状图' },
   { type: 'line', icon: <LineChartOutlined />, label: '折线图' },
   { type: 'pie', icon: <PieChartOutlined />, label: '饼图' },
@@ -60,7 +60,7 @@ const Canvas: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 // --- 画布上的图表 (使用 react-rnd 支持拖拽+缩放) ---
 const DraggableChart: React.FC<{
   chart: ChartItem;
-  dataSourceData: any;
+  dataSourceData?: ChartData;
   onClick: () => void;
   onResize: (id: number, width: number, height: number, x?: number, y?: number) => void;
   onMove: (id: number, x: number, y: number) => void;
@@ -98,7 +98,7 @@ const DraggableChart: React.FC<{
     >
       <div style={{ width: '100%', height: '100%', position: 'relative' }}>
         <ChartRenderer
-          chartType={chart.chart_type as any}
+          chartType={chart.chart_type}
           title={chart.title}
           data={dataSourceData}
           queryConfig={JSON.parse(chart.query_config || '{}')}
@@ -114,10 +114,10 @@ const DashboardEditorPage: React.FC = () => {
   const { message } = App.useApp();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [dashboard, setDashboard] = useState<any>(null);
+  const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [charts, setCharts] = useState<ChartItem[]>([]);
-  const [dataSources, setDataSources] = useState<any[]>([]);
-  const [dataSourceData, setDataSourceData] = useState<Record<number, any>>({});
+  const [dataSources, setDataSources] = useState<DataSource[]>([]);
+  const [dataSourceData, setDataSourceData] = useState<Record<number, DataSourceData>>({});
   const [loading, setLoading] = useState(true);
   const [selectedChart, setSelectedChart] = useState<ChartItem | null>(null);
   const [saving, setSaving] = useState(false);
@@ -209,7 +209,7 @@ const DashboardEditorPage: React.FC = () => {
         const ds = await dataSourceService.list();
         setDataSources(ds);
         // 加载图表绑定的数据
-        const dataMap: Record<number, any> = {};
+        const dataMap: Record<number, DataSourceData> = {};
         for (const chart of d.charts || []) {
           if (chart.data_source_id && !dataMap[chart.data_source_id]) {
             try { dataMap[chart.data_source_id] = await dataSourceService.getData(chart.data_source_id); } catch {}
@@ -220,7 +220,7 @@ const DashboardEditorPage: React.FC = () => {
       finally { setLoading(false); }
     };
     load();
-  }, [id]);
+  }, [id, message, navigate]);
 
   const handleDragEnd = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event;
@@ -245,7 +245,7 @@ const DashboardEditorPage: React.FC = () => {
     }
 
     // 注意: 图表拖拽/缩放现由 react-rnd 的 Rnd 组件处理, 不再走 @dnd-kit
-  }, [charts, id, sendOperation]);
+  }, [charts, id, message, sendOperation]);
 
   const handleMove = useCallback((chartId: number, x: number, y: number) => {
     setCharts(prev => prev.map(c => c.id === chartId ? { ...c, position_x: x, position_y: y } : c));
@@ -261,7 +261,7 @@ const DashboardEditorPage: React.FC = () => {
       if (y !== undefined) updated.position_y = y;
       return updated;
     }));
-    const payload: any = { width: newW, height: newH };
+    const payload: Partial<ChartItem> = { width: newW, height: newH };
     if (x !== undefined) payload.position_x = x;
     if (y !== undefined) payload.position_y = y;
     chartService.update(chartId, payload).catch(() => {});
@@ -287,16 +287,16 @@ const DashboardEditorPage: React.FC = () => {
     finally { setSaving(false); }
   };
 
-  const handleChartPropertyUpdate = async (field: string, value: any) => {
+  const handleChartPropertyUpdate = async (field: keyof ChartItem, value: unknown) => {
     if (!selectedChart) return;
-    const updated = { ...selectedChart, [field]: value };
+    const updated = { ...selectedChart, [field]: value } as ChartItem;
     setSelectedChart(updated);
     setCharts(prev => prev.map(c => c.id === updated.id ? updated : c));
-    try { await chartService.update(updated.id, { [field]: value }); } catch {}
+    try { await chartService.update(updated.id, { [field]: value } as Partial<ChartItem>); } catch {}
     sendOperation({ type: 'chart_updated', chart_id: updated.id, field, value });
 
     // 切换数据源时立即加载数据
-    if (field === 'data_source_id' && value) {
+    if (field === 'data_source_id' && typeof value === 'number') {
       try {
         const data = await dataSourceService.getData(value);
         setDataSourceData(prev => ({ ...prev, [value]: data }));

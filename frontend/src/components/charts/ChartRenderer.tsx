@@ -1,54 +1,27 @@
 import React, { useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { Table, Statistic, Card } from 'antd';
+import type { ChartData, ChartType } from '../../services/dashboard';
 
 interface ChartRendererProps {
-  chartType: 'bar' | 'line' | 'pie' | 'scatter' | 'heatmap' | 'radar' | 'funnel' | 'card' | 'table';
+  chartType: ChartType;
   title: string;
-  data?: { columns: string[]; rows: Record<string, string>[] };
+  data?: ChartData;
   queryConfig?: { xColumn?: string; yColumn?: string; nameColumn?: string; valueColumn?: string };
   configJson?: string;
   width?: number | string;
   height?: number | string;
 }
 
+const numericValue = (value: unknown) => Number.parseFloat(String(value ?? '')) || 0;
+const EMPTY_ROWS: ChartData['rows'] = [];
+const EMPTY_COLUMNS: string[] = [];
+
 const ChartRenderer: React.FC<ChartRendererProps> = React.memo(({ chartType, title, data, queryConfig, configJson, width = '100%', height = '100%' }) => {
-  const rows = data?.rows || [];
-  const columns = data?.columns || [];
+  const rows = data?.rows || EMPTY_ROWS;
+  const columns = data?.columns || EMPTY_COLUMNS;
 
   const yCol = queryConfig?.yColumn || columns[1] || '数值';
-
-  if (!data || !rows.length) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999', border: '1px dashed #d9d9d9', borderRadius: 4 }}>
-        <span>{title} - 暂无数据，请绑定数据源</span>
-      </div>
-    );
-  }
-
-  // 指标卡
-  if (chartType === 'card') {
-    const values = rows.map(r => parseFloat(r[yCol]) || 0);
-    const total = values.reduce((a, b) => a + b, 0);
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 16 }}>
-        <Card style={{ textAlign: 'center', width: '100%' }} bordered={false}>
-          <Statistic title={title} value={total} suffix={yCol} valueStyle={{ color: '#1677ff', fontSize: 36, fontWeight: 'bold' }} />
-        </Card>
-      </div>
-    );
-  }
-
-  // 数据表格
-  if (chartType === 'table') {
-    const cols = columns.map(c => ({ title: c, dataIndex: c, key: c }));
-    return (
-      <div style={{ padding: 12, overflow: 'auto', height: '100%' }}>
-        <div style={{ textAlign: 'center', fontWeight: 'bold', marginBottom: 8, fontSize: 14 }}>{title}</div>
-        <Table columns={cols} dataSource={rows.map((r, i) => ({ ...r, _key: i }))} rowKey="_key" size="small" pagination={rows.length > 10 ? { pageSize: 10 } : false} />
-      </div>
-    );
-  }
 
   // ECharts 图表
   const option = useMemo(() => {
@@ -58,7 +31,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = React.memo(({ chartType, tit
     const valueCol = queryConfig?.valueColumn || columns[1] || '数值';
 
     const xData = rows.map(r => r[xCol] || '');
-    const yData = rows.map(r => parseFloat(r[yCol]) || 0);
+    const yData = rows.map(r => numericValue(r[yCol]));
 
     const dataPointCount = rows.length;
 
@@ -102,7 +75,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = React.memo(({ chartType, tit
       }
 
       case 'pie': {
-        const pieData = rows.map(r => ({ name: r[nameCol] || '', value: parseFloat(r[valueCol]) || 0 }));
+        const pieData = rows.map(r => ({ name: r[nameCol] || '', value: numericValue(r[valueCol]) }));
         return {
           ...baseOption,
           tooltip: {
@@ -119,7 +92,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = React.memo(({ chartType, tit
 
       case 'scatter': {
         const useLarge = dataPointCount > 1000;
-        const scatterData = rows.map(r => [parseFloat(r[xCol]) || 0, parseFloat(r[valueCol]) || 0]);
+        const scatterData = rows.map(r => [numericValue(r[xCol]), numericValue(r[valueCol])]);
         return {
           ...baseOption,
           tooltip: {
@@ -147,7 +120,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = React.memo(({ chartType, tit
           const xi = xCategories.indexOf(r[xCol] || '');
           const yi = yCategories.indexOf(r[yCol] || '');
           if (xi >= 0 && yi >= 0) {
-            heatData.push([xi, yi, parseFloat(r[valueCol]) || 0]);
+            heatData.push([xi, yi, numericValue(r[valueCol])]);
           }
         });
         return {
@@ -163,8 +136,8 @@ const ChartRenderer: React.FC<ChartRendererProps> = React.memo(({ chartType, tit
 
       case 'radar': {
         // 每行作为雷达图的一项指标：nameCol 为指标名，valueCol 为指标值
-        const indicators = rows.map(r => ({ name: r[nameCol] || '', max: Math.max(...rows.map(r2 => parseFloat(r2[valueCol]) || 0)) * 1.2 }));
-        const radarData = [{ name: title, value: rows.map(r => parseFloat(r[valueCol]) || 0) }];
+        const indicators = rows.map(r => ({ name: r[nameCol] || '', max: Math.max(...rows.map(r2 => numericValue(r2[valueCol]))) * 1.2 }));
+        const radarData = [{ name: title, value: rows.map(r => numericValue(r[valueCol])) }];
         return {
           ...baseOption,
           tooltip: { trigger: 'item' as const },
@@ -174,7 +147,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = React.memo(({ chartType, tit
       }
 
       case 'funnel': {
-        const funnelData = rows.map(r => ({ name: r[nameCol] || '', value: parseFloat(r[valueCol]) || 0 }));
+        const funnelData = rows.map(r => ({ name: r[nameCol] || '', value: numericValue(r[valueCol]) }));
         return {
           ...baseOption,
           tooltip: { trigger: 'item' as const, formatter: (params: any) => `${params.name}：${params.value}` },
@@ -192,7 +165,36 @@ const ChartRenderer: React.FC<ChartRendererProps> = React.memo(({ chartType, tit
       default:
         return baseOption;
     }
-  }, [chartType, title, data, queryConfig, configJson]);
+  }, [chartType, title, rows, columns, yCol, queryConfig, configJson]);
+
+  if (!data || !rows.length) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999', border: '1px dashed #d9d9d9', borderRadius: 4 }}>
+        <span>{title} - 暂无数据，请绑定数据源</span>
+      </div>
+    );
+  }
+
+  if (chartType === 'card') {
+    const total = rows.map(r => numericValue(r[yCol])).reduce((a, b) => a + b, 0);
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 16 }}>
+        <Card style={{ textAlign: 'center', width: '100%' }} bordered={false}>
+          <Statistic title={title} value={total} suffix={yCol} valueStyle={{ color: '#1677ff', fontSize: 36, fontWeight: 'bold' }} />
+        </Card>
+      </div>
+    );
+  }
+
+  if (chartType === 'table') {
+    const cols = columns.map(c => ({ title: c, dataIndex: c, key: c }));
+    return (
+      <div style={{ padding: 12, overflow: 'auto', height: '100%' }}>
+        <div style={{ textAlign: 'center', fontWeight: 'bold', marginBottom: 8, fontSize: 14 }}>{title}</div>
+        <Table columns={cols} dataSource={rows.map((r, i) => ({ ...r, _key: i }))} rowKey="_key" size="small" pagination={rows.length > 10 ? { pageSize: 10 } : false} />
+      </div>
+    );
+  }
 
   return <ReactECharts option={option} style={{ width, height }} opts={{ renderer: 'canvas' }} />;
 });

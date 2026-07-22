@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import { Button, Card, Row, Col, Modal, Input, Typography, Empty, Space, Tag, Popconfirm, App, Pagination, Skeleton } from 'antd';
 import { PlusOutlined, DeleteOutlined, EyeOutlined, LogoutOutlined, DatabaseOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -35,13 +35,13 @@ const DashboardListPage: React.FC = () => {
   const logout = useAuthStore(s => s.logout);
   const navigate = useNavigate();
 
-  const fetchDashboards = async () => {
+  const fetchDashboards = useCallback(async () => {
     try {
       const data = await dashboardService.list();
       setDashboards(data);
     } catch { message.error('加载看板失败'); }
     finally { setLoading(false); }
-  };
+  }, [message]);
 
   useEffect(() => {
     if (!useAuthStore.getState().token) {
@@ -49,7 +49,7 @@ const DashboardListPage: React.FC = () => {
       return;
     }
     fetchDashboards();
-  }, []);
+  }, [fetchDashboards, navigate]);
 
   const handleCreate = async () => {
     if (!newName.trim()) return;

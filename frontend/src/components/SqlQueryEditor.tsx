@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import axios from 'axios';
 import { Select, Button, Table, Typography, Space, App, Card, Tag, Empty } from 'antd';
 import { PlayCircleOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import Editor from '@monaco-editor/react';
@@ -49,9 +50,12 @@ const SqlQueryEditor: React.FC<Props> = ({ onApplyToChart }) => {
       const res = await dataSourceService.executeSql(selectedDsId, query.trim());
       setResult(res);
       message.success(`查询成功，返回 ${res.row_count} 行`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setResult(null);
-      message.error(err.response?.data?.detail || '查询执行失败');
+      const detail = axios.isAxiosError<{ detail?: string }>(err)
+        ? err.response?.data?.detail
+        : undefined;
+      message.error(detail || '查询执行失败');
     }
     finally {
       setExecuting(false);

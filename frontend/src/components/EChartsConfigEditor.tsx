@@ -3,6 +3,9 @@ import { Modal, Button, Space, App, Tabs } from 'antd';
 import { CodeOutlined, EyeOutlined } from '@ant-design/icons';
 import Editor from '@monaco-editor/react';
 import ReactECharts from 'echarts-for-react';
+import type { ChartData } from '../services/dashboard';
+
+const numericValue = (value: unknown) => Number.parseFloat(String(value ?? '')) || 0;
 
 interface EChartsConfigEditorProps {
   open: boolean;
@@ -10,7 +13,7 @@ interface EChartsConfigEditorProps {
   title: string;
   chartType: string;
   configJson: string;
-  data?: { columns: string[]; rows: Record<string, string>[] };
+  data?: ChartData;
   queryConfig?: { xColumn?: string; yColumn?: string; nameColumn?: string; valueColumn?: string };
   onSave: (newConfigJson: string) => void;
 }
@@ -28,8 +31,8 @@ const EChartsConfigEditor: React.FC<EChartsConfigEditorProps> = ({
     const nameCol = queryConfig?.nameColumn || columns[0] || '分类';
     const valueCol = queryConfig?.valueColumn || columns[1] || '数值';
 
-    const xData = rows.map((r: any) => r[xCol] || '');
-    const yData = rows.map((r: any) => parseFloat(r[valueCol]) || 0);
+    const xData = rows.map(r => r[xCol] || '');
+    const yData = rows.map(r => numericValue(r[valueCol]));
 
     const base: any = {
       title: { text: title, left: 'center', textStyle: { fontSize: 14 } },
@@ -43,24 +46,24 @@ const EChartsConfigEditor: React.FC<EChartsConfigEditorProps> = ({
       return { ...base, xAxis: { type: 'category', data: xData }, yAxis: { type: 'value' }, series: [{ type: 'line', data: yData, smooth: true }] };
     }
     if (chartType === 'pie') {
-      return { ...base, series: [{ type: 'pie', data: rows.map((r: any) => ({ name: r[nameCol], value: parseFloat(r[valueCol]) || 0 })) }] };
+      return { ...base, series: [{ type: 'pie', data: rows.map(r => ({ name: r[nameCol], value: numericValue(r[valueCol]) })) }] };
     }
     if (chartType === 'scatter') {
-      return { ...base, xAxis: { type: 'value' }, yAxis: { type: 'value' }, series: [{ type: 'scatter', data: rows.map((r: any) => [parseFloat(r[xCol]) || 0, parseFloat(r[valueCol]) || 0]) }] };
+      return { ...base, xAxis: { type: 'value' }, yAxis: { type: 'value' }, series: [{ type: 'scatter', data: rows.map(r => [numericValue(r[xCol]), numericValue(r[valueCol])]) }] };
     }
     if (chartType === 'heatmap') {
-      const xCats = [...new Set(rows.map((r: any) => r[xCol] || ''))];
-      const yCats = [...new Set(rows.map((r: any) => r[valueCol] || ''))];
+      const xCats = [...new Set(rows.map(r => r[xCol] || ''))];
+      const yCats = [...new Set(rows.map(r => r[valueCol] || ''))];
       const hd: [number, number, number][] = [];
-      rows.forEach((r: any) => { const xi = xCats.indexOf(r[xCol]||''); const yi = yCats.indexOf(r[valueCol]||''); if (xi>=0&&yi>=0) hd.push([xi, yi, parseFloat(r[columns[1]])||0]); });
+      rows.forEach(r => { const xi = xCats.indexOf(r[xCol] || ''); const yi = yCats.indexOf(r[valueCol] || ''); if (xi >= 0 && yi >= 0) hd.push([xi, yi, numericValue(r[columns[1]])]); });
       return { ...base, xAxis: { type: 'category', data: xCats }, yAxis: { type: 'category', data: yCats }, visualMap: { min: 0, max: 100 }, series: [{ type: 'heatmap', data: hd }] };
     }
     if (chartType === 'radar') {
-      const inds = rows.map((r: any) => ({ name: r[nameCol] || '', max: Math.max(...rows.map((r2: any) => parseFloat(r2[valueCol]) || 0)) * 1.2 }));
-      return { ...base, radar: { indicator: inds }, series: [{ type: 'radar', data: [{ value: rows.map((r: any) => parseFloat(r[valueCol]) || 0) }] }] };
+      const inds = rows.map(r => ({ name: r[nameCol] || '', max: Math.max(...rows.map(r2 => numericValue(r2[valueCol]))) * 1.2 }));
+      return { ...base, radar: { indicator: inds }, series: [{ type: 'radar', data: [{ value: rows.map(r => numericValue(r[valueCol])) }] }] };
     }
     if (chartType === 'funnel') {
-      return { ...base, series: [{ type: 'funnel', data: rows.map((r: any) => ({ name: r[nameCol], value: parseFloat(r[valueCol]) || 0 })) }] };
+      return { ...base, series: [{ type: 'funnel', data: rows.map(r => ({ name: r[nameCol], value: numericValue(r[valueCol]) })) }] };
     }
     return base;
   }, [chartType, title, data, queryConfig]);
