@@ -294,7 +294,8 @@ const DashboardEditorPage: React.FC = () => {
     const patch = chartPropertyPatch(...update);
     if (!patch) return;
 
-    const [field, value] = update;
+    const [field, inputValue] = update;
+    const value = field === 'data_source_id' ? patch.data_source_id ?? null : inputValue;
     const updated = { ...selectedChart, ...patch };
     setSelectedChart(updated);
     setCharts(prev => prev.map(c => c.id === updated.id ? updated : c));

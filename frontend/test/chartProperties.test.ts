@@ -14,6 +14,10 @@ test('chartPropertyPatch preserves valid editable values', () => {
   assert.deepEqual(chartPropertyPatch('data_source_id', null), { data_source_id: null });
 });
 
+test('chartPropertyPatch normalizes a cleared data source to null', () => {
+  assert.deepEqual(chartPropertyPatch('data_source_id', undefined), { data_source_id: null });
+});
+
 function invalidFieldValuePairsAreRejectedByTypeScript() {
   // @ts-expect-error title only accepts strings
   chartPropertyPatch('title', 640);
