@@ -441,12 +441,31 @@ async def test_sql_execute_times_out_without_exposing_connection_url(
     monkeypatch.setattr(datasource_api, "executor", BlockingExecutor(), raising=False)
     configured_timeouts = []
 
-    class FastTimeoutPool(BoundedWorkerPool):
+    class WorkerActivatedTimeoutPool(BoundedWorkerPool):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._shorten_next_timeout = True
+
         async def run(self, function, *args, timeout):
             configured_timeouts.append(timeout)
-            return await super().run(function, *args, timeout=0.01)
+            if not self._shorten_next_timeout:
+                return await super().run(function, *args, timeout=timeout)
+            self._shorten_next_timeout = False
+            execution_task = asyncio.create_task(
+                super().run(function, *args, timeout=timeout)
+            )
+            try:
+                await _wait_for_worker_start(worker_started)
+                return await asyncio.wait_for(execution_task, timeout=0.01)
+            finally:
+                if not execution_task.done():
+                    execution_task.cancel()
+                await asyncio.gather(execution_task, return_exceptions=True)
 
-    pool = FastTimeoutPool(max_workers=1, thread_name_prefix="test-route-sql")
+    pool = WorkerActivatedTimeoutPool(
+        max_workers=1,
+        thread_name_prefix="test-route-sql",
+    )
     monkeypatch.setattr(datasource_api, "execution_pool", pool, raising=False)
     request_task = asyncio.create_task(async_client.post(
         "/api/datasources/sql/execute",
@@ -494,9 +513,19 @@ async def test_timed_out_sql_work_cannot_grow_workers_or_connections(
             self._shorten_next_timeout = True
 
         async def run(self, function, *args, timeout):
-            effective_timeout = 0.01 if self._shorten_next_timeout else timeout
+            if not self._shorten_next_timeout:
+                return await super().run(function, *args, timeout=timeout)
             self._shorten_next_timeout = False
-            return await super().run(function, *args, timeout=effective_timeout)
+            execution_task = asyncio.create_task(
+                super().run(function, *args, timeout=timeout)
+            )
+            try:
+                await _wait_for_worker_start(worker_started)
+                return await asyncio.wait_for(execution_task, timeout=0.01)
+            finally:
+                if not execution_task.done():
+                    execution_task.cancel()
+                await asyncio.gather(execution_task, return_exceptions=True)
 
     pool = FirstExecutionTimeoutPool(
         max_workers=1,
