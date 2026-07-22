@@ -411,6 +411,14 @@ def _successful_sql_result():
     }
 
 
+async def _wait_for_worker_start(worker_started):
+    for _ in range(100):
+        if worker_started.is_set():
+            return
+        await asyncio.sleep(0.01)
+    pytest.fail("SQL worker did not start")
+
+
 @pytest.mark.asyncio
 async def test_sql_execute_times_out_without_exposing_connection_url(
     async_client: AsyncClient, auth_headers: dict, monkeypatch
@@ -421,14 +429,16 @@ async def test_sql_execute_times_out_without_exposing_connection_url(
         "connection_config": {"db_type": "sqlite", "database": ":memory:"},
     }, headers=auth_headers)
     datasource_id = created.json()["id"]
+    worker_started = threading.Event()
+    release_worker = threading.Event()
 
-    class SlowExecutor:
+    class BlockingExecutor:
         def execute(self, _config, _query):
-            time.sleep(0.1)
+            worker_started.set()
+            release_worker.wait()
             return _successful_sql_result()
 
-    slow_executor = SlowExecutor()
-    monkeypatch.setattr(datasource_api, "executor", slow_executor, raising=False)
+    monkeypatch.setattr(datasource_api, "executor", BlockingExecutor(), raising=False)
     configured_timeouts = []
 
     class FastTimeoutPool(BoundedWorkerPool):
@@ -438,17 +448,22 @@ async def test_sql_execute_times_out_without_exposing_connection_url(
 
     pool = FastTimeoutPool(max_workers=1, thread_name_prefix="test-route-sql")
     monkeypatch.setattr(datasource_api, "execution_pool", pool, raising=False)
+    request_task = asyncio.create_task(async_client.post(
+        "/api/datasources/sql/execute",
+        json={"datasource_id": datasource_id, "query": "SELECT 1 AS value"},
+        headers=auth_headers,
+    ))
     try:
-        response = await async_client.post("/api/datasources/sql/execute", json={
-            "datasource_id": datasource_id,
-            "query": "SELECT 1 AS value",
-        }, headers=auth_headers)
+        await _wait_for_worker_start(worker_started)
+        response = await request_task
 
         assert response.status_code == 504
         assert response.json() == {"detail": "SQL query timed out"}
         assert "sqlite:///" not in response.text
         assert configured_timeouts == [settings.SQL_QUERY_TIMEOUT_SECONDS + 1]
     finally:
+        release_worker.set()
+        await asyncio.gather(request_task, return_exceptions=True)
         pool.shutdown()
 
 
@@ -470,42 +485,59 @@ async def test_timed_out_sql_work_cannot_grow_workers_or_connections(
         def execute(self, _config, _query):
             executor_calls.append("execute")
             worker_started.set()
-            release_worker.wait(timeout=0.5)
+            release_worker.wait()
             return _successful_sql_result()
 
-    class FastTimeoutPool(BoundedWorkerPool):
-        async def run(self, function, *args, timeout):
-            return await super().run(function, *args, timeout=0.1)
+    class FirstExecutionTimeoutPool(BoundedWorkerPool):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._shorten_next_timeout = True
 
-    pool = FastTimeoutPool(max_workers=1, thread_name_prefix="test-route-sql")
+        async def run(self, function, *args, timeout):
+            effective_timeout = 0.01 if self._shorten_next_timeout else timeout
+            self._shorten_next_timeout = False
+            return await super().run(function, *args, timeout=effective_timeout)
+
+    pool = FirstExecutionTimeoutPool(
+        max_workers=1,
+        thread_name_prefix="test-route-sql",
+    )
     monkeypatch.setattr(datasource_api, "executor", BlockingExecutor())
     monkeypatch.setattr(datasource_api, "execution_pool", pool, raising=False)
     try:
-        first = await async_client.post("/api/datasources/sql/execute", json={
-            "datasource_id": datasource_id,
-            "query": "SELECT 1 AS value",
-        }, headers=auth_headers)
-        second = await async_client.post("/api/datasources/sql/execute", json={
-            "datasource_id": datasource_id,
-            "query": "SELECT 1 AS value",
-        }, headers=auth_headers)
+        first_request = asyncio.create_task(async_client.post(
+            "/api/datasources/sql/execute",
+            json={"datasource_id": datasource_id, "query": "SELECT 1 AS value"},
+            headers=auth_headers,
+        ))
+        try:
+            await _wait_for_worker_start(worker_started)
+            first = await first_request
+            second = await async_client.post("/api/datasources/sql/execute", json={
+                "datasource_id": datasource_id,
+                "query": "SELECT 1 AS value",
+            }, headers=auth_headers)
 
-        assert worker_started.is_set()
-        assert first.status_code == 504
-        assert second.status_code == 503
-        assert second.json() == {"detail": "SQL service is busy"}
-        assert executor_calls == ["execute"]
+            assert first.status_code == 504
+            assert second.status_code == 503
+            assert second.json() == {"detail": "SQL service is busy"}
+            assert executor_calls == ["execute"]
+        finally:
+            release_worker.set()
+            await asyncio.gather(first_request, return_exceptions=True)
 
-        release_worker.set()
+        recovered = None
         for _ in range(50):
-            recovered = await async_client.post(
+            response = await async_client.post(
                 "/api/datasources/sql/execute",
                 json={"datasource_id": datasource_id, "query": "SELECT 1 AS value"},
                 headers=auth_headers,
             )
-            if recovered.status_code != 503:
+            if response.status_code == 200:
+                recovered = response
                 break
             await asyncio.sleep(0.01)
+        assert recovered is not None
         assert recovered.status_code == 200
     finally:
         release_worker.set()
