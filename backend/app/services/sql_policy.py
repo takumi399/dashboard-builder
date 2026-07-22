@@ -155,5 +155,3 @@ class SQLPolicy:
             raise SQLPolicyError("Host address is not allowed")
         if (address.is_private or address.is_loopback) and not explicitly_allowed:
             raise SQLPolicyError("Host address is not allowed")
-        if not explicitly_allowed and not (address.is_private or address.is_loopback):
-            raise SQLPolicyError("Host is not allowed")

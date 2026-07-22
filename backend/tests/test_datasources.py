@@ -240,9 +240,6 @@ def test_sql_connection_schema_preserves_typed_tls_options_and_rejects_typos():
         "sslrootcert": "root-ca.pem",
         "sslcert": "client-cert.pem",
         "sslkey": "client-key.pem",
-        "ssl_ca": "alias-ca.pem",
-        "ssl_cert": "alias-cert.pem",
-        "ssl_key": "alias-key.pem",
     })
     mysql = SQLConnectionConfig.model_validate({
         "db_type": "mysql",
@@ -258,15 +255,50 @@ def test_sql_connection_schema_preserves_typed_tls_options_and_rejects_typos():
 
     assert postgresql.model_dump(exclude_none=True)["sslmode"] == "verify-full"
     assert postgresql.model_dump(exclude_none=True)["sslrootcert"] == "root-ca.pem"
-    assert postgresql.model_dump(exclude_none=True)["ssl_ca"] == "alias-ca.pem"
     assert mysql.model_dump(exclude_none=True)["ssl"] is True
     assert mysql.model_dump(exclude_none=True)["ssl_verify_identity"] is True
+    with pytest.raises(ValidationError, match="not valid for mysql"):
+        SQLConnectionConfig.model_validate({
+            "db_type": "mysql",
+            "database": "analytics",
+            "sslmode": "verify-full",
+        })
+    with pytest.raises(ValidationError, match="not valid for postgresql"):
+        SQLConnectionConfig.model_validate({
+            "db_type": "postgresql",
+            "database": "analytics",
+            "ssl_verify_identity": True,
+        })
     with pytest.raises(ValidationError, match="extra_forbidden"):
         SQLConnectionConfig.model_validate({
             "db_type": "postgresql",
             "database": "analytics",
             "ssl_mod": "verify-full",
         })
+
+
+@pytest.mark.asyncio
+async def test_invalid_sql_tls_config_does_not_echo_credentials(
+    async_client: AsyncClient, auth_headers: dict
+):
+    response = await async_client.post("/api/datasources", json={
+        "name": "invalid-tls",
+        "source_type": "sql",
+        "connection_config": {
+            "db_type": "mysql",
+            "host": "mysql.example",
+            "database": "analytics",
+            "password": "never-return-this-password",
+            "sslmode": "verify-full",
+            "ssl_private_key_typo": "never-return-this-key",
+        },
+    }, headers=auth_headers)
+
+    assert response.status_code == 422
+    assert "never-return-this-password" not in response.text
+    assert "never-return-this-key" not in response.text
+    assert "verify-full" not in response.text
+    assert all("input" not in error for error in response.json()["detail"])
 
 
 @pytest.mark.asyncio

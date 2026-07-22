@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, Literal
 from datetime import datetime
 
@@ -45,6 +45,33 @@ class SQLConnectionConfig(BaseModel):
     ssl_verify_identity: Optional[bool] = None
 
     model_config = {"extra": "forbid"}
+
+    @model_validator(mode="after")
+    def validate_driver_tls_options(self):
+        postgres_tls = {"sslmode", "sslrootcert", "sslcert", "sslkey"}
+        mysql_tls = {
+            "ssl",
+            "ssl_ca",
+            "ssl_cert",
+            "ssl_key",
+            "ssl_verify_cert",
+            "ssl_verify_identity",
+        }
+        configured = {
+            field
+            for field in postgres_tls | mysql_tls
+            if getattr(self, field) is not None
+        }
+        allowed = (
+            postgres_tls
+            if self.db_type == "postgresql"
+            else mysql_tls if self.db_type == "mysql" else set()
+        )
+        unsupported = sorted(configured - allowed)
+        if unsupported:
+            fields = ", ".join(unsupported)
+            raise ValueError(f"TLS options {fields} are not valid for {self.db_type}")
+        return self
 
 
 class PublicSQLConnectionConfig(BaseModel):

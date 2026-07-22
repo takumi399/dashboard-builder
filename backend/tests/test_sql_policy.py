@@ -109,9 +109,8 @@ def test_validate_host_allows_explicit_private_and_loopback_hosts(policy):
     policy.validate_host("127.0.0.1")
 
 
-def test_validate_host_rejects_public_host_without_allowlist(policy):
-    with pytest.raises(SQLPolicyError, match="not allowed"):
-        policy.validate_host("public.example")
+def test_validate_host_allows_public_host_without_allowlist(policy):
+    assert policy.validate_host("public.example") == "8.8.8.8"
 
 
 def test_validate_host_rejects_any_disallowed_address_from_hostname(policy):

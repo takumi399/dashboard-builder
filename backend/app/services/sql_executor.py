@@ -64,6 +64,16 @@ class BoundedWorkerPool:
 class SQLExecutor:
     """Execute policy-normalized SQL with connection and result bounds."""
 
+    _POSTGRES_TLS_FIELDS = {"sslmode", "sslrootcert", "sslcert", "sslkey"}
+    _MYSQL_TLS_FIELDS = {
+        "ssl",
+        "ssl_ca",
+        "ssl_cert",
+        "ssl_key",
+        "ssl_verify_cert",
+        "ssl_verify_identity",
+    }
+
     def execute(self, config: dict, query: str) -> dict:
         timeout_seconds = settings.SQL_QUERY_TIMEOUT_SECONDS
         max_rows = settings.SQL_MAX_ROWS
@@ -105,6 +115,7 @@ class SQLExecutor:
 
     def _engine_config(self, config: dict, timeout_seconds: int) -> tuple[URL, dict]:
         db_type = str(config.get("db_type") or "").lower()
+        self._validate_tls_options(config, db_type)
         if db_type == "sqlite":
             database = str(config.get("database") or ":memory:")
             if database != ":memory:" and not Path(database).is_absolute():
@@ -187,7 +198,7 @@ class SQLExecutor:
             sslmode and str(sslmode).lower() != "disable"
         ) or any(
             config.get(key)
-            for key in ("ssl", "sslrootcert", "sslcert", "sslkey", "ssl_ca", "ssl_cert", "ssl_key")
+            for key in ("sslrootcert", "sslcert", "sslkey")
         )
         if not tls_configured:
             return
@@ -199,15 +210,10 @@ class SQLExecutor:
             connect_args["host"] = original_host
         if sslmode:
             connect_args["sslmode"] = sslmode
-        elif config.get("ssl"):
-            connect_args["sslmode"] = "require"
         for source, target in (
             ("sslrootcert", "sslrootcert"),
-            ("ssl_ca", "sslrootcert"),
             ("sslcert", "sslcert"),
-            ("ssl_cert", "sslcert"),
             ("sslkey", "sslkey"),
-            ("ssl_key", "sslkey"),
         ):
             if config.get(source) and target not in connect_args:
                 connect_args[target] = config[source]
@@ -238,6 +244,23 @@ class SQLExecutor:
         ):
             if config.get(key) is not None:
                 connect_args[key] = config[key]
+
+    @classmethod
+    def _validate_tls_options(cls, config: dict, db_type: str) -> None:
+        configured = {
+            field
+            for field in cls._POSTGRES_TLS_FIELDS | cls._MYSQL_TLS_FIELDS
+            if config.get(field) is not None
+        }
+        allowed = (
+            cls._POSTGRES_TLS_FIELDS
+            if db_type in {"postgres", "postgresql"}
+            else cls._MYSQL_TLS_FIELDS if db_type == "mysql" else set()
+        )
+        unsupported = sorted(configured - allowed)
+        if unsupported:
+            fields = ", ".join(unsupported)
+            raise ValueError(f"TLS options {fields} are not valid for {db_type}")
 
     @staticmethod
     def _json_value(value: Any) -> Any:
