@@ -3,7 +3,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: dashboard
-      POSTGRES_PASSWORD: dashboard123
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: dashboard
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -15,10 +15,13 @@ services:
       dockerfile: Dockerfile.prod
     environment:
       DEBUG: "false"
-      DATABASE_URL: postgresql+asyncpg://dashboard:dashboard123@db:5432/dashboard
-      SECRET_KEY: change-me-in-production
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY}
       DATASOURCE_ENCRYPTION_KEY: ${DATASOURCE_ENCRYPTION_KEY:?set DATASOURCE_ENCRYPTION_KEY}
       SQL_ALLOWED_HOSTS: ${SQL_ALLOWED_HOSTS:-db}
+      SQL_QUERY_TIMEOUT_SECONDS: "${SQL_QUERY_TIMEOUT_SECONDS:-10}"
+      SQL_MAX_ROWS: "${SQL_MAX_ROWS:-1000}"
+      SQLITE_DATA_DIR: ${SQLITE_DATA_DIR:-./data}
     depends_on:
       - db
     restart: unless-stopped
